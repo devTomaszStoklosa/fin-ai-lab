@@ -1,0 +1,11 @@
+name: foundation-smoke
+dataset_version: 1
+target: fin_ai_lab.core.evals.smoke_target:target
+graders:
+  - type: numeric
+    field: sum
+  - type: schema
+    params:
+      schema: fin_ai_lab.core.evals.smoke_target:SmokeOutput
+repeats: 1
+concurrency: 4

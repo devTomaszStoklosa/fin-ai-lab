@@ -10,6 +10,7 @@ class FakeLlmClient:
     def __init__(self, responses: dict[str, str]) -> None:
         self._responses = responses
         self.requests: list[LlmRequest] = []
+        self.total_cost_usd = Decimal(0)
 
     async def complete(self, request: LlmRequest) -> LlmResult:
         self.requests.append(request)
