@@ -2,6 +2,10 @@ class ConfigError(Exception):
     pass
 
 
+class PromptError(Exception):
+    pass
+
+
 class UnknownModelError(Exception):
     pass
 
