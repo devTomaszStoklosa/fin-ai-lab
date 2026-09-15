@@ -1,6 +1,6 @@
 # 0005. Maszyna tylko z CPU bez AVX2: lekki stack lokalnie, GPU w chmurze
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

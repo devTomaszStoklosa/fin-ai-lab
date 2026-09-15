@@ -78,7 +78,7 @@ flowchart LR
 - P4-S2 Etykiety teachera (Batch API) + ręczna weryfikacja + zgodność (kappa)
 - P4-S3 Baseline'y: klasa większościowa, TF-IDF + regresja logistyczna, few-shot LLM
 - P4-S4 Fine-tuning HerBERT (Colab)
-- P4-S5 LoRA/QLoRA na małym decoderze (Bielik / Qwen)
+- P4-S5 LoRA/QLoRA na małym decoderze (Bielik)
 - P4-S6 Kwantyzacja i inferencja na lokalnym CPU
 - P4-S7 Raport porównawczy: jakość, koszt, latencja
 

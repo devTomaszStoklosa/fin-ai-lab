@@ -1,6 +1,6 @@
 # 0001. Python 3.12, uv i jeden pakiet z podpakietami per projekt
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 0002. Surowe SDK przed frameworkami
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

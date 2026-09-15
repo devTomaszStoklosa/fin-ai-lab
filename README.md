@@ -21,7 +21,7 @@ Kolejność, zależności i kamienie milowe: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - Python 3.12 · uv · pytest · ruff
 - Google Gemini API przez oficjalne SDK `google-genai` — domyślny LLM
-- Modele open-weight (Bielik / Qwen) — wyłącznie fine-tuning w projekcie 4, trening w chmurze (Colab / Kaggle)
+- Modele open-weight (Bielik) — wyłącznie fine-tuning w projekcie 4, trening w chmurze (Colab / Kaggle)
 - Dane: SEC EDGAR, FRED, NBP, GUS BDL, GDELT, RSS, OpenFIGI — [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md)
 
 ## Stan

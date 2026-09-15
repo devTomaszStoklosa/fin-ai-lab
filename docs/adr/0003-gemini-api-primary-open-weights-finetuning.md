@@ -1,6 +1,6 @@
 # 0003. Google Gemini API jako główny LLM, modele open-weight tylko do fine-tuningu
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -11,7 +11,7 @@ Pierwotnie repo zakładało Claude API jako głównego dostawcę (patrz historia
 ## Decision
 
 - Domyślny model: `gemini-2.5-pro`. Tańsze/szybsze modele (`gemini-2.5-flash`, `gemini-2.5-flash-lite`) tylko po evalu pokazującym, że jakość się trzyma. ID modeli zweryfikuj przed użyciem w [ai.google.dev](https://ai.google.dev) — w repo nie ma lokalnego skilla będącego źródłem prawdy, jak przy Claude.
-- Fine-tuning (P4): modele open-weight — encoder HerBERT oraz mały decoder (Bielik lub Qwen) — trenowane w Colab/Kaggle. Bez zmian względem poprzedniej decyzji.
+- Fine-tuning (P4): modele open-weight — encoder HerBERT oraz mały decoder Bielik — trenowane w Colab/Kaggle. Bez zmian względem poprzedniej decyzji poza zawężeniem decodera do Bielika (lepszy start na polskim finansowym słownictwie, patrz Alternatives).
 - Wszystkie wywołania Gemini przez `core.llm`; szczegóły API w [LLM-API.md](../LLM-API.md).
 - Jeden dostawca (Gemini) bez warstwy abstrakcji multi-provider — świadoma decyzja właściciela, nie architektura na zapas.
 
@@ -27,3 +27,4 @@ Pierwotnie repo zakładało Claude API jako głównego dostawcę (patrz historia
 - **Kilku dostawców przez warstwę abstrakcji** — więcej kodu i słabsze wykorzystanie funkcji specyficznych dla providera (cache, structured outputs); odrzucone na życzenie właściciela repo.
 - **Wyłącznie modele lokalne** — maszyna bez GPU i AVX2 (patrz ADR 0005) wyklucza to w praktyce.
 - **Claude API** — pierwotny wybór tego ADR; odrzucony, bo właściciel repo chce korzystać wyłącznie z Google Gemini.
+- **Qwen jako decoder do fine-tuningu (P4)** — silniejszy ogólnie, szersze wsparcie narzędzi (LoRA, kwantyzacja), ale słabiej „czuje" polski bez dodatkowego treningu; odrzucony na rzecz Bielika, który już zna polską gramatykę i słownictwo finansowe.

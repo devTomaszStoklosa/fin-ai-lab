@@ -1,6 +1,6 @@
 # 0006. Raporty opisowe, bez rekomendacji inwestycyjnych
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 

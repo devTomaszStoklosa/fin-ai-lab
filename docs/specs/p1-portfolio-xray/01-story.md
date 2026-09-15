@@ -7,7 +7,7 @@ Links: docs/ROADMAP.md, docs/specs/lab-foundation/
 
 ## Problem
 
-Inwestor indywidualny trzyma pozycje u kilku brokerów (XTB, mBank, Bossa, IBKR, Trading212, Revolut). Każdy eksportuje inny format: CSV, XLSX albo PDF, nagłówki po polsku lub angielsku, różne formaty liczb i dat. Obraz całości — koncentracja, waluty, ryzyko — wymaga ręcznego klejenia arkuszy. Dla właściciela repo to projekt nauki: structured outputs, walidacja z pętlą samokorekty, pierwsze narzędzie, evale wierności. ASSUMPTION: właściciel ma eksporty od co najmniej dwóch brokerów.
+Inwestor indywidualny trzyma pozycje u kilku brokerów (XTB, mBank, Bossa, IBKR, Trading212, Revolut). Każdy eksportuje inny format: CSV, XLSX albo PDF, nagłówki po polsku lub angielsku, różne formaty liczb i dat. Obraz całości — koncentracja, waluty, ryzyko — wymaga ręcznego klejenia arkuszy. Dla właściciela repo to projekt nauki: structured outputs, walidacja z pętlą samokorekty, pierwsze narzędzie, evale wierności. Właściciel ma konta u XTB i Bossa (Dom Maklerski BOŚ); przykładowe pliki eksportu dosłane później — format i dokładna struktura nagłówków nadal nieznane.
 
 ## Outcome
 
@@ -63,6 +63,6 @@ Must. MVP cut line: P1-S1 do P1-S5 (CSV/XLSX, identyfikacja, metryki, raport z g
 
 | # | Question | Owner | Due |
 |---|---|---|---|
-| 1 | Eksporty których brokerów masz i w jakich formatach? | Tomasz | przed P1-S1 |
+| 1 | Format i dokładna struktura eksportów XTB i Bossa (CSV/XLSX/PDF, nagłówki) — czeka na przykładowe pliki | Tomasz | przed P1-S1 |
 | 2 | Waluta bazowa raportu — PLN? | Tomasz | przed P1-S4 |
 | 3 | Klasyfikacja sektorów w MVP: LLM z evalem, ręczna mapa czy pominąć? | Tomasz | przed P1-S4 |

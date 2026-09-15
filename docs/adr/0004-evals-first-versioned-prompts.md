@@ -1,6 +1,6 @@
 # 0004. Evale najpierw, prompty w plikach z wersjami
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
