@@ -1,0 +1,32 @@
+[project]
+name = "fin-ai-lab"
+version = "0.1.0"
+description = "Laboratorium nauki AI engineeringu na danych z rynków finansowych"
+readme = "README.md"
+authors = [
+    { name = "Tomasz", email = "tomaszstoklosa1990@gmial.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+fin-ai-lab = "fin_ai_lab.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.7",
+]
