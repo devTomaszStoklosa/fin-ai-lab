@@ -4,8 +4,8 @@
   "reminder": true,
   "defaultRole": null,
   "gates": {
-    "dev": null,
-    "qa": null
+    "dev": "uv run ruff check . && uv run pytest -q",
+    "qa": "uv run pytest -q"
   },
   "gateTimeoutSec": 600,
   "gateMaxBlocks": 3
