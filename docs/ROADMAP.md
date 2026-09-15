@@ -1,0 +1,117 @@
+# Roadmap
+
+Pięć projektów nauki AI engineeringu na danych rynkowych plus fundament wspólny dla wszystkich. Każdy projekt jest epikiem RoleKit; slice'y poniżej to kandydaci na tickety (PO potwierdza podział w `01-story.md`).
+
+## Kolejność i zależności
+
+```mermaid
+flowchart LR
+  F[lab-foundation<br/>szkielet, klient LLM, harness evali] --> P1[P1 Portfolio X-Ray]
+  F --> P2[P2 RAG na raportach]
+  F --> P3[P3 Market Pulse]
+  F --> P4[P4 Klasyfikator newsów]
+  P1 --> P5[P5 Komitet inwestycyjny]
+  P2 --> P5
+  P3 --> P5
+  P4 --> P5
+```
+
+1. **lab-foundation** — bez niego każdy projekt budowałby własny klient LLM i własne evale.
+2. **P1** — najprostszy start: pojedyncze wywołania, structured outputs, pierwsze evale.
+3. **P2 i P3** — w dowolnej kolejności.
+4. **P4** — niezależny stack (GPU w chmurze, Python ML); może iść równolegle z P2/P3.
+5. **P5** — na końcu, składa wyniki P1–P4 (do testów wystarczą atrapy).
+
+## Umiejętności × projekty
+
+| Umiejętność | Główny projekt | Wraca w |
+|---|---|---|
+| Prompt engineering, structured outputs | P1 | wszystkie |
+| Ewaluacja (golden sety, LLM-as-judge, baseline) | lab-foundation, P1 | wszystkie |
+| RAG (parsowanie, chunking, embeddingi, hybrid, reranking, cytaty) | P2 | P5 |
+| Tool use, projekt narzędzi, MCP | P3 | P1, P5 |
+| Workflow vs agent, orchestrator-workers | P3 | P5 |
+| Observability, koszty, prompt caching, Batch API | P3 | P2, P4 |
+| Fine-tuning (LoRA/QLoRA), destylacja, jakość danych | P4 | — |
+| Multi-agent, context engineering, pamięć, HITL | P5 | — |
+| Guardrails, prompt injection | P1 | P2, P5 |
+
+## Slice'y
+
+### lab-foundation (feature M)
+- F-1 Szkielet: uv, ruff, pytest, CLI `fin-ai-lab`, test środowiska (AVX2)
+- F-2 Konfiguracja z `.env` i klient LLM z liczeniem kosztów oraz trace JSONL
+- F-3 Rejestr promptów w plikach z wersjami
+- F-4 Harness evali MVP: zbiory JSONL, graderzy, raport, baseline, strażnik kosztów
+
+### P1 Portfolio X-Ray
+- P1-S1 Import jednego formatu brokera do schematu kanonicznego (parser deterministyczny = baseline i źródło prawdy)
+- P1-S2 LLM tworzy konfigurację parsera dla nieznanego formatu + walidacja z pętlą samokorekty
+- P1-S3 Identyfikacja instrumentów przez OpenFIGI (pierwsze narzędzie)
+- P1-S4 Silnik metryk portfela (czysty Python)
+- P1-S5 Raport opisowy + eval wierności liczb + guardrail „bez rekomendacji" + testy prompt injection
+- P1-S6 Wyciągi PDF przez document input
+- Później: historia transakcji w DuckDB + text-to-SQL
+
+### P2 Zapytaj raport
+- P2-S1 Pobranie i parsowanie 10-K (5 spółek) z podziałem na sekcje
+- P2-S2 Naiwny RAG + golden set + metryki retrieval i generacji (baseline)
+- P2-S3 Hybrid search (BM25 + wektory) + filtry metadanych + reranker
+- P2-S4 Contextual retrieval z prompt caching — porównanie z S3
+- P2-S5 Router: pytania liczbowe do XBRL, dekompozycja porównań
+- P2-S6 Cytaty (Citations API) i poprawne odmowy
+- P2-S7 Pytania po polsku i raporty spółek GPW (PDF)
+- Później: diff sekcji Risk Factors rok do roku, GraphRAG
+
+### P3 Market Pulse
+- P3-S1 Deterministyczne wskaźniki + jedno wywołanie LLM tworzące brief
+- P3-S2 Narzędzia + tool runner (pojedynczy agent)
+- P3-S3 Własny MCP server z narzędziami danych
+- P3-S4 Orchestrator-workers z równoległymi workerami
+- P3-S5 Stan między przebiegami, wykrywanie zmian, alert
+- P3-S6 Tracing i koszt per przebieg
+- P3-S7 Harmonogram (Task Scheduler / GitHub Actions / Managed Agents)
+- P3-S8 Evale trajektorii i backtest z anonimizacją dat
+
+### P4 Klasyfikator newsów
+- P4-S1 Korpus nagłówków, schemat etykiet, wytyczne etykietowania
+- P4-S2 Etykiety teachera (Batch API) + ręczna weryfikacja + zgodność (kappa)
+- P4-S3 Baseline'y: klasa większościowa, TF-IDF + regresja logistyczna, few-shot LLM
+- P4-S4 Fine-tuning HerBERT (Colab)
+- P4-S5 LoRA/QLoRA na małym decoderze (Bielik / Qwen)
+- P4-S6 Kwantyzacja i inferencja na lokalnym CPU
+- P4-S7 Raport porównawczy: jakość, koszt, latencja
+
+### P5 Komitet inwestycyjny
+- P5-S1 Pojedynczy agent ze wszystkimi narzędziami (baseline)
+- P5-S2 Supervisor + role-subagenci ze strukturalnymi briefami
+- P5-S3 Kwant: stress testy w sandboxie
+- P5-S4 Krytyk (evaluator-optimizer) i wymóg źródeł dla twierdzeń
+- P5-S5 Pamięć tez i rozliczanie trafności w czasie
+- P5-S6 Human-in-the-loop i budżety
+- P5-S7 A/B: komitet vs pojedynczy agent
+- Później: UI ze streamingiem (FastAPI + React)
+
+## Budżet API (ASSUMPTION — do weryfikacji ręcznie wobec cennika ai.google.dev/gemini-api/docs/pricing)
+
+| Projekt | Rząd wielkości | Główny koszt |
+|---|---|---|
+| lab-foundation | < 1 USD | testy integracyjne klienta |
+| P1 | kilka USD | przebiegi evali importu i raportu |
+| P2 | kilka–kilkanaście USD | contextual retrieval, evale |
+| P3 | centy za przebieg | codzienne briefy |
+| P4 | kilka–kilkadziesiąt USD | etykiety teachera (Batch API −50%) |
+| P5 | ok. 1 USD za przebieg komitetu | wiele agentów, wiele rund |
+
+Limit wydatków ustaw w Google Cloud / AI Studio przed przejściem na płatny tier; w darmowym tierze pilnuj limitów RPM/RPD, nie budżetu w USD.
+
+## Stan ticketów
+
+| Ticket | 01-story | 02-spec | 03-design | Kod |
+|---|---|---|---|---|
+| lab-foundation | Ready for dev | Ready for dev | Ready for dev | — |
+| p1-portfolio-xray | Ready for architect | Ready for architect | — | — |
+| p2-filings-rag | Ready for ba | — | — | — |
+| p3-market-pulse | Ready for ba | — | — | — |
+| p4-news-classifier | Ready for ba | — | — | — |
+| p5-investment-committee | Ready for ba | — | — | — |

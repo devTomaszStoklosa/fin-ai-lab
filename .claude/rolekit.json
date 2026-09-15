@@ -1,0 +1,12 @@
+{
+  "specsDir": "docs/specs",
+  "enforcement": "ask",
+  "reminder": true,
+  "defaultRole": null,
+  "gates": {
+    "dev": null,
+    "qa": null
+  },
+  "gateTimeoutSec": 600,
+  "gateMaxBlocks": 3
+}
