@@ -8,6 +8,8 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "google-genai>=2.23.0",
+    "pydantic-settings>=2.15.0",
     "typer>=0.27.2",
 ]
 
@@ -28,5 +30,13 @@ select = ["E", "F", "I", "UP"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.16.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-m 'not live'"
+markers = [
+    "live: requires network access and a real GEMINI_API_KEY, skipped by default",
 ]
