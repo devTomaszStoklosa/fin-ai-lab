@@ -92,18 +92,20 @@ flowchart LR
 - P5-S7 A/B: komitet vs pojedynczy agent
 - Później: UI ze streamingiem (FastAPI + React)
 
-## Budżet API (ASSUMPTION — do weryfikacji ręcznie wobec cennika ai.google.dev/gemini-api/docs/pricing)
+## Budżet API — zasada: zero kosztów (ASSUMPTION — limity RPM/RPD do weryfikacji ręcznie wobec ai.google.dev/gemini-api/docs/pricing)
 
-| Projekt | Rząd wielkości | Główny koszt |
+Klucz Gemini bez billingu: koszt zawsze 0 USD, projekty nie różnią się budżetem w dolarach, tylko presją na limit zapytań darmowego tieru (RPM/RPD).
+
+| Projekt | Presja na darmowy limit | Główne źródło presji |
 |---|---|---|
-| lab-foundation | < 1 USD | testy integracyjne klienta |
-| P1 | kilka USD | przebiegi evali importu i raportu |
-| P2 | kilka–kilkanaście USD | contextual retrieval, evale |
-| P3 | centy za przebieg | codzienne briefy |
-| P4 | kilka–kilkadziesiąt USD | etykiety teachera (Batch API −50%) |
-| P5 | ok. 1 USD za przebieg komitetu | wiele agentów, wiele rund |
+| lab-foundation | niska | testy integracyjne klienta, kilka wywołań |
+| P1 | niska–średnia | przebiegi evali importu i raportu |
+| P2 | średnia–wysoka | contextual retrieval, evale z wieloma wariantami |
+| P3 | niska za przebieg, ale cykliczna | codzienne briefy — throttling musi znać harmonogram |
+| P4 | wysoka w S2 (etykiety teachera), potem 0 (fine-tuning lokalny/Colab) | Batch Mode zamiast pojedynczych wywołań, żeby nie wypalić RPD |
+| P5 | wysoka | wiele agentów, wiele rund w jednym przebiegu komitetu |
 
-Limit wydatków ustaw w Google Cloud / AI Studio przed przejściem na płatny tier; w darmowym tierze pilnuj limitów RPM/RPD, nie budżetu w USD.
+Zero limitu wydatków do ustawienia — klucz zostaje bez billingu. Throttling per model w `core.http`/`core.llm` (patrz [docs/LLM-API.md](LLM-API.md)) pilnuje RPM/RPD, nie budżetu w USD.
 
 ## Stan ticketów
 

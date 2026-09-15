@@ -44,7 +44,7 @@ Laboratorium nauki AI engineeringu (RAG, LLM i prompty, agenci, fine-tuning, eva
 6. **Sekrety** tylko w `.env` (gitignored). Nigdy w kodzie, notebookach, trace'ach ani w `~/.claude/settings.json`.
 7. **Dane prywatne:** prawdziwe eksporty z brokerów tylko w `data/private/` (gitignored). Fixtures w repo są syntetyczne albo zanonimizowane.
 8. **Licencje danych:** przed użyciem źródła sprawdź [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md). „Tylko nauka" = nie publikujemy i nie przenosimy do Analizoteki.
-9. **Koszty API:** każde wywołanie LLM przechodzi przez `fin_ai_lab.core.llm` (tokeny, koszt, trace). Przed przebiegiem, którego szacunek przekracza `FIN_AI_LAB_MAX_RUN_COST_USD`, pokaż szacunek i poczekaj na zgodę.
+9. **Zero kosztów.** Klucz Gemini bez podpiętego billingu — przekroczenie darmowego tieru kończy się błędem, nie kosztem. Każde wywołanie LLM przechodzi przez `fin_ai_lab.core.llm` (tokeny, koszt, trace); `FIN_AI_LAB_MAX_RUN_COST_USD=0` to fail-safe — jeśli szacunek kosztu kiedykolwiek wyjdzie powyżej zera (np. billing przypadkiem podpięty), przebieg pyta o zgodę albo przerywa się w sesji nieinteraktywnej, zamiast ciągnąć dalej po cichu. Ciągłość przebiegów pilnuje throttling w `core.http`/`core.llm` dopasowany do limitów RPM/RPD darmowego tieru — patrz [docs/LLM-API.md](docs/LLM-API.md).
 10. **Najpierw surowe SDK.** Frameworki (LangGraph, LlamaIndex, PydanticAI itp.) dopiero po ADR.
 
 ## Gemini API

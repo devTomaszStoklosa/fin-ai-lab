@@ -66,7 +66,7 @@ Evale
 
 ## Business rules
 
-Strażnik kosztów
+Strażnik kosztów — domyślny limit `0` (zasada zero kosztów, klucz bez billingu, patrz LLM-API.md): w praktyce każdy szacunek > 0 traktowany jak przekroczenie, więc tabela poniżej działa jako fail-safe na anomalię, a nie jako codzienne hamowanie. Ochronę przed przerwanym w połowie przebiegiem daje throttling `core.http` dopasowany do RPM/RPD, nie ten strażnik.
 
 | Szacunek ≤ limit | Sesja interaktywna | Wynik |
 |---|---|---|

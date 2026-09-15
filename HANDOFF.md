@@ -46,7 +46,7 @@ Blokujące:
 | # | Pytanie | Blokuje |
 |---|---|---|
 | 1 | ~~Czy repo dostaje prywatny remote na GitHubie?~~ Odpowiedź: publiczny remote, [devTomaszStoklosa/fin-ai-lab](https://github.com/devTomaszStoklosa/fin-ai-lab) | pierwszy push — zrobiony |
-| 2 | Miesięczny limit wydatków API? | klucz API, testy `live` |
+| 2 | ~~Miesięczny limit wydatków API?~~ Odpowiedź: zero kosztów — klucz Gemini bez podpiętego billingu, `FIN_AI_LAB_MAX_RUN_COST_USD=0` jako fail-safe, patrz [docs/LLM-API.md](docs/LLM-API.md) | klucz API, testy `live` — odblokowane |
 | 3 | Eksporty których brokerów masz i w jakich formatach? Odpowiedź: XTB i Bossa (Dom Maklerski BOŚ); format wciąż nieznany, przykładowe pliki dosłane później | P1-S1 — częściowo odblokowane |
 
 Pozostałe pytania są w sekcjach „Open questions" artefaktów: [lab-foundation](docs/specs/lab-foundation/02-spec.md), [P1](docs/specs/p1-portfolio-xray/02-spec.md), [P2](docs/specs/p2-filings-rag/01-story.md), [P3](docs/specs/p3-market-pulse/01-story.md), [P4](docs/specs/p4-news-classifier/01-story.md), [P5](docs/specs/p5-investment-committee/01-story.md).

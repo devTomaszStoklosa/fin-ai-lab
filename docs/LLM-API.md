@@ -8,6 +8,13 @@ Skrót na potrzeby tego repo. **W przeciwieństwie do Claude API, tu nie ma loka
 - Klucz tylko w `.env` jako `GEMINI_API_KEY`. SDK czyta go sam.
 - **Nigdy nie wklejaj klucza w czacie, kodzie, notebooku ani trace'ach.** Jeśli klucz kiedykolwiek trafi gdzie indziej niż `.env` (np. wklejony w rozmowę), traktuj go jako skompromitowany i wygeneruj nowy w AI Studio.
 
+## Zero kosztów — zasada tego repo
+
+- Klucz Gemini w tym repo **nigdy nie ma podpiętego billingu** w Google Cloud/AI Studio. Konsekwencja: przekroczenie darmowego limitu (RPM/RPD) kończy się błędem (np. 429/resource exhausted), nie obciążeniem karty — nie ma jak automatycznie przejść na płatne rozliczenie bez billingu.
+- `FIN_AI_LAB_MAX_RUN_COST_USD=0` w `.env` to fail-safe, nie realny mechanizm ochronny: skoro koszt zawsze wychodzi zero, sam limit w dolarach niczego nie pilnuje na co dzień. Jego rola to złapać anomalię — gdyby koszt kiedykolwiek wyszedł > 0, przebieg ma się zatrzymać i zapytać, a nie ciągnąć dalej po cichu.
+- Realną ochronę ciągłości przebiegu daje throttling w `core.http`/`core.llm`: limit zapytań na minutę dopasowany do RPM konkretnego modelu w darmowym tierze, nie reagowanie dopiero na błąd 429. Sprawdź aktualny RPM/RPD modelu w `ai.google.dev` przed ustawieniem throttlingu — różni się per model i bywa jednocyfrowy dla mocniejszych modeli.
+- Embeddingi, tracing i inne usługi pomocnicze: wybieraj domyślnie darmowe opcje (embeddingi Gemini, lokalne trace JSONL) — patrz sekcja „Embeddingi" niżej i `.env.example`.
+
 ## Darmowy tier a dane
 
 - Darmowy tier: limity RPM/RPD/TPM per model (niższe niż płatny), zwykle brak opłat do tych limitów.

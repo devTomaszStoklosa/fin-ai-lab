@@ -17,7 +17,7 @@ Maszyna deweloperska: Intel i5-2500K (AVX, brak AVX2), 8 GB RAM, brak GPU NVIDIA
 ## Consequences
 
 - Pozytywne: repo działa na obecnym sprzęcie; ograniczenia są jawne i testowane.
-- Negatywne: brak lokalnych eksperymentów z dużymi modelami; zależność od limitów darmowych GPU w chmurze.
+- Negatywne: brak lokalnych eksperymentów z dużymi modelami; zależność od limitów darmowych GPU w chmurze — nie tylko godzin GPU, ale też czasu trwania i ciągłości sesji (Colab potrafi ubić sesję po kilkunastu godzinach ciągłej pracy, po dłuższej bezczynności albo losowo odciąć GPU przy dużym obciążeniu serwerów). Zasada zero kosztów (patrz ADR 0003) wyklucza płatny Colab Pro jako obejście — trening w P4 musi zapisywać checkpointy wystarczająco często, żeby przerwana sesja nie kasowała całej dotychczasowej pracy.
 - Decyzję warto zrewidować przy zmianie sprzętu.
 
 ## Alternatives considered
