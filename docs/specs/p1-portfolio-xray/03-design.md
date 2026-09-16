@@ -158,6 +158,9 @@ class Position(BaseModel):
     market_currency: str | None
     valuation_date: date
     resolution_status: Literal["resolved", "unresolved", "ambiguous"] = "unresolved"
+    figi: str | None = None                   # REQ-020
+    exchange_code: str | None = None          # REQ-020
+    identification_rule: str | None = None    # REQ-021 — jaka reguła wybrała notowanie
     suspicious_cells: list[str] = []          # REQ-008
 
 class Portfolio(BaseModel):
@@ -206,8 +209,14 @@ class OpenFigiClient:
     async def resolve_by_isin(self, isin: str, currency: str, broker_market: str | None) -> Identification: ...
 
 class ThrottledHttpClient:
-    def __init__(self, base_url: str, min_interval_s: float, cache_dir: Path) -> None: ...
-    async def get(self, path: str, params: dict) -> dict: ...
+    # rozszerzone o post() i nagłówki: OpenFIGI (POST /v3/mapping) był pierwszym
+    # konsumentem i pierwsza wersja kontraktu (tylko GET) nie wystarczała
+    def __init__(
+        self, base_url: str, *, min_interval_s: float, provider: str,
+        default_headers: dict[str, str] | None = None, cache_dir: Path = CACHE_DIR,
+    ) -> None: ...
+    async def get(self, path: str, params: dict | None = None) -> object: ...
+    async def post(self, path: str, json_body: object) -> object: ...
 
 def compute_weights(portfolio: Portfolio) -> WeightMetrics: ...
 def compute_risk_metrics(

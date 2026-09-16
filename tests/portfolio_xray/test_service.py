@@ -7,9 +7,22 @@ import openpyxl
 
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
+from fin_ai_lab.portfolio_xray.identification.openfigi import Identification
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
 from fin_ai_lab.portfolio_xray.service import import_file
 from portfolio_xray._fixtures import build_synthetic_xtb_workbook
+
+
+class _StubOpenFigiClient:
+    def __init__(self, identification: Identification) -> None:
+        self._identification = identification
+        self.calls: list[tuple[str, str, str | None]] = []
+
+    async def resolve_by_isin(
+        self, isin: str, currency: str, broker_market: str | None = None
+    ) -> Identification:
+        self.calls.append((isin, currency, broker_market))
+        return self._identification
 
 PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
 
@@ -121,6 +134,56 @@ async def test_import_file_unknown_format_saves_config_after_approval(tmp_path: 
     assert len(result.positions) == 1
     assert approvals == ["newbroker"]
     assert list(tmp_path.glob("*.yaml"))  # config persisted
+
+
+async def test_import_file_resolves_identification_for_positions_with_isin(tmp_path: Path) -> None:
+    registry = ParserRegistry(parsers_dir=tmp_path)
+    proposal = _proposal_json(
+        expected_headers=["Name", "Qty", "Price", "ISIN"],
+        column_mapping={
+            "Name": "instrument_name",
+            "Qty": "quantity",
+            "Price": "avg_cost",
+            "ISIN": "isin",
+        },
+    )
+    llm_client = FakeLlmClient({"propose_config": proposal})
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG000BLNNH6",
+            ticker="AAPL",
+            exchange_code="US",
+            identification_rule="only listing in currency",
+        )
+    )
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Positions"
+    sheet.append(["Name", "Qty", "Price", "ISIN"])
+    sheet.append(["Apple Inc", 10, 5.5, "US0378331005"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    result = await import_file(
+        buffer.getvalue(),
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        market_currency="PLN",
+        registry=registry,
+        broker_hint="newbroker",
+        llm_client=llm_client,
+        prompt_registry=_prompt_registry(),
+        model="gemini-2.5-flash",
+        on_new_config_proposed=lambda config, positions: True,
+        openfigi_client=stub,
+    )
+
+    assert result.errors == []
+    assert result.positions[0].resolution_status == "resolved"
+    assert result.positions[0].figi == "BBG000BLNNH6"
+    assert stub.calls == [("US0378331005", "PLN", None)]
 
 
 async def test_import_file_unknown_format_rejected_by_owner_is_not_saved(tmp_path: Path) -> None:
