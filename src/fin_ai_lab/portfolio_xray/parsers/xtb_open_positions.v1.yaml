@@ -1,0 +1,35 @@
+broker: xtb
+version: 1
+sheet_name: "Open Positions"
+header_row: 9
+row_filter:
+  require_non_empty: ["Category"]
+expected_headers:
+  - "Product"
+  - "Instrument/Position"
+  - "Ticker"
+  - "Category"
+  - "Type"
+  - "Volume"
+  - "Value"
+  - "Current price"
+  - "Open price"
+  - "Open time (UTC)"
+  - "Stop Loss"
+  - "Take Profit"
+  - "Net Profit %"
+  - "Net Profit"
+  - "Gross Profit"
+  - "Margin"
+  - "Open Commission"
+  - "Swap"
+  - "Rollover"
+column_mapping:
+  "Instrument/Position": instrument_name
+  "Ticker": symbol
+  "Category": asset_class
+  "Volume": quantity
+  "Value": market_value
+  "Open price": avg_cost
+number_format: en
+delimiter: null
