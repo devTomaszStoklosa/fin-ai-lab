@@ -20,6 +20,8 @@ dependencies = [
 # numpy/pandas are the first real native-dependency risk on this CPU
 # (no AVX2) — see tests/test_environment.py and docs/ENVIRONMENT.md.
 portfolio = ["numpy>=2.0", "pandas>=2.2", "yfinance>=0.2.66"]
+# pypdf is pure Python (no native extension) — no AVX2 risk, unlike portfolio's deps.
+rag = ["pypdf>=5.0.0"]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"

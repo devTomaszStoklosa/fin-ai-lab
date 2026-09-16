@@ -105,6 +105,22 @@ async def test_raises_after_exhausting_retries_on_persistent_500(tmp_path: Path)
         await client.get("/thing")
 
 
+async def test_get_text_returns_raw_body_and_caches_without_a_second_call(tmp_path: Path) -> None:
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        return httpx.Response(200, text="<html><body>Item 1A. Risk Factors</body></html>")
+
+    client = _client(handler, tmp_path)
+
+    first = await client.get_text("/filing.htm")
+    second = await client.get_text("/filing.htm")
+
+    assert first == second == "<html><body>Item 1A. Risk Factors</body></html>"
+    assert call_count["n"] == 1
+
+
 async def test_different_requests_use_different_cache_entries(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"path": request.url.path})
