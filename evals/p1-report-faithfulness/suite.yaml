@@ -1,7 +1,7 @@
 name: p1-report-faithfulness
 dataset_version: 1
 target: fin_ai_lab.portfolio_xray.report_target:target
-model: gemini-2.5-flash
+model: gemini-3.6-flash
 graders:
   - type: exact
     field: mismatches

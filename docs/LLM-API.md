@@ -26,9 +26,10 @@ Skrót na potrzeby tego repo. **W przeciwieństwie do Claude API, tu nie ma loka
 | Model | ID | Kontekst | Rola w repo |
 |---|---|---|---|
 | Gemini 2.5 Pro | `gemini-2.5-pro` | ~1M | domyślny — rozumowanie, ekstrakcja, narzędzia |
-| Gemini 2.5 Flash | `gemini-2.5-flash` | ~1M | workery, sędziowie — po pomiarze |
+| Gemini 3.6 Flash | `gemini-3.6-flash` | ~1M | workery, sędziowie — po pomiarze |
 | Gemini 2.5 Flash-Lite | `gemini-2.5-flash-lite` | ~1M | masowa klasyfikacja — po pomiarze |
 
+- `gemini-2.5-flash` przestał być dostępny dla nowych kluczy API (potwierdzone 2026-09-16 realnym wywołaniem — 404 "no longer available to new users", z odsyłaczem do `gemini-3.6-flash`). Jeśli inny model z tabeli też zacznie zwracać 404, sprawdź `ai.google.dev/gemini-api/docs/models` przed podstawieniem czegokolwiek na pamięć.
 - ID podawaj dokładnie jak zwraca `ai.google.dev` (Google czasem dodaje sufiksy wersji, np. `-latest` albo datę — sprawdź, czy repo ma się do nich przypinać, czy śledzić najnowszą).
 - Tańszy/szybszy model to decyzja poparta evalem, nie domysł — analogicznie do zasady z Claude.
 - Ceny za token: sprawdź aktualną tabelę na [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) przed każdym szacunkiem — nie przepisuj tu migawki, bo szybko się dezaktualizuje.

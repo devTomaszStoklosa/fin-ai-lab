@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-PRICES_AS_OF = date(2026, 9, 15)
+PRICES_AS_OF = date(2026, 9, 16)
 
 MILLION = Decimal(1_000_000)
 
@@ -60,6 +60,18 @@ PRICES: dict[str, ModelPrice] = {
                 up_to_input_tokens=None,
                 input_price_per_million=Decimal("0.10"),
                 output_price_per_million=Decimal("0.40"),
+            ),
+        ]
+    ),
+    # gemini-2.5-flash returns 404 for new API keys ("no longer available to
+    # new users"); ai.google.dev/gemini-api/docs/pricing points to this as
+    # the replacement. Price valid through 2026-12-31 (rises after).
+    "gemini-3.6-flash": ModelPrice(
+        tiers=[
+            PriceTier(
+                up_to_input_tokens=None,
+                input_price_per_million=Decimal("0.75"),
+                output_price_per_million=Decimal("3.75"),
             ),
         ]
     ),

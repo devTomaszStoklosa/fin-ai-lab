@@ -1,0 +1,39 @@
+{
+  "suite": "p1-sector-accuracy",
+  "dataset_version": 1,
+  "started_at": "2026-09-16T11:17:52.617931Z",
+  "finished_at": "2026-09-16T11:17:56.758220Z",
+  "incomplete": false,
+  "model": "gemini-3.6-flash",
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "b0c3aae",
+  "cost_usd": "0.00069525",
+  "case_count": 6,
+  "cache_hits": 0,
+  "latency_p50_ms": 1820.0,
+  "latency_p95_ms": 2359.0,
+  "metrics": {
+    "grader:exact": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 6.0
+    },
+    "tag:equity": {
+      "pass_rate": 1.0,
+      "n": 4.0
+    },
+    "tag:non-equity": {
+      "pass_rate": 1.0,
+      "n": 2.0
+    }
+  },
+  "cases": {
+    "jpmorgan-financials": true,
+    "apple-technology": true,
+    "exxon-energy": true,
+    "acwi-etf-not-sector": true,
+    "treasury-bond-not-sector": true,
+    "johnson-healthcare": true
+  }
+}
