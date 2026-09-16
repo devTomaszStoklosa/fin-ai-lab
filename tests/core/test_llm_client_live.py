@@ -10,7 +10,7 @@ async def test_complete_returns_result_from_real_api() -> None:
     settings = Settings()
     client = GeminiLlmClient(api_key=settings.require_gemini_api_key())
     request = LlmRequest(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         messages=[{"role": "user", "text": "Reply with the single word: pong"}],
         max_output_tokens=50,
     )

@@ -91,7 +91,7 @@ def import_positions(
     broker: str | None = typer.Option(
         None, "--broker", help="Required only if the file's format is not yet recognized."
     ),
-    model: str = typer.Option("gemini-2.5-flash", "--model"),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
     yes: bool = typer.Option(
         False, "--yes", help="Accept a newly proposed parser config without asking."
     ),
@@ -159,7 +159,7 @@ def report_command(
     broker: str | None = typer.Option(
         None, "--broker", help="Required only if the file's format is not yet recognized."
     ),
-    model: str = typer.Option("gemini-2.5-flash", "--model"),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
     yes: bool = typer.Option(
         False, "--yes", help="Accept a newly proposed parser config without asking."
     ),
