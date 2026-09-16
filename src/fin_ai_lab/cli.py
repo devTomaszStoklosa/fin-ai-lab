@@ -51,6 +51,9 @@ def eval_command(
     settings = Settings()
     llm_client = _build_llm_client(settings)
     prompts = PromptRegistry()
+    prompts.load_dir(PORTFOLIO_PROMPTS_DIR)
+    prompts.load_dir(SECTOR_PROMPTS_DIR)
+    prompts.load_dir(REPORT_PROMPTS_DIR)
 
     try:
         summary, run_dir = asyncio.run(
