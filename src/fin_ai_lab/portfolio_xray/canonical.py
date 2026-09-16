@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
-KNOWN_BROKERS = {"xtb", "bossa", "other"}
 KNOWN_CURRENCIES = {"PLN", "USD", "EUR", "GBP"}
 
 AccountType = Literal["regular", "ike", "ikze", "other"]
@@ -53,7 +52,10 @@ class Position(BaseModel):
     @field_validator("broker")
     @classmethod
     def _broker_known(cls, value: str) -> str:
-        if value not in KNOWN_BROKERS:
+        # Not a closed set: P1-S2 onboards new brokers at runtime (the LLM
+        # correction loop), so "known" means "identified", not "in an
+        # allowlist maintained here" — that would block onboarding itself.
+        if not value:
             raise ValueError(f"Unknown broker '{value}'")
         return value
 
