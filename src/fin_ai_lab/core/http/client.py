@@ -45,6 +45,11 @@ class ThrottledHttpClient:
     async def post(self, path: str, json_body: object) -> object:
         return await self._request("POST", path, json_body=json_body)
 
+    async def get_text(self, path: str, params: dict[str, object] | None = None) -> str:
+        # For non-JSON responses (e.g. SEC EDGAR filing HTML) — get()/post()
+        # always call response.json(), which fails on these.
+        return await self._request("GET", path, params=params or {}, as_text=True)
+
     async def _request(
         self,
         method: str,
@@ -52,9 +57,10 @@ class ThrottledHttpClient:
         *,
         params: dict[str, object] | None = None,
         json_body: object = None,
+        as_text: bool = False,
     ) -> object:
-        cache_key = self._cache_key(method, path, params, json_body)
-        cached = self._read_cache(cache_key)
+        cache_key = self._cache_key(method, path, params, json_body, as_text)
+        cached = self._read_cache(cache_key, as_text)
         if cached is not None:
             return cached
 
@@ -65,8 +71,8 @@ class ThrottledHttpClient:
             response = await self._send_with_retries(client, method, url, params, json_body)
 
         response.raise_for_status()
-        result = response.json()
-        self._write_cache(cache_key, result)
+        result = response.text if as_text else response.json()
+        self._write_cache(cache_key, result, as_text)
         return result
 
     async def _send_with_retries(
@@ -97,18 +103,33 @@ class ThrottledHttpClient:
             self._last_request_at = time.monotonic()
 
     def _cache_key(
-        self, method: str, path: str, params: dict[str, object] | None, json_body: object
+        self,
+        method: str,
+        path: str,
+        params: dict[str, object] | None,
+        json_body: object,
+        as_text: bool = False,
     ) -> str:
-        payload = {"method": method, "path": path, "params": params, "json": json_body}
+        payload = {
+            "method": method,
+            "path": path,
+            "params": params,
+            "json": json_body,
+            "as_text": as_text,
+        }
         canonical = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    def _read_cache(self, key: str) -> object | None:
-        path = self._cache_dir / f"{key}.json"
+    def _read_cache(self, key: str, as_text: bool = False) -> object | None:
+        suffix = "txt" if as_text else "json"
+        path = self._cache_dir / f"{key}.{suffix}"
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        return text if as_text else json.loads(text)
 
-    def _write_cache(self, key: str, value: object) -> None:
+    def _write_cache(self, key: str, value: object, as_text: bool = False) -> None:
         self._cache_dir.mkdir(parents=True, exist_ok=True)
-        (self._cache_dir / f"{key}.json").write_text(json.dumps(value), encoding="utf-8")
+        suffix = "txt" if as_text else "json"
+        content = value if as_text else json.dumps(value)
+        (self._cache_dir / f"{key}.{suffix}").write_text(content, encoding="utf-8")

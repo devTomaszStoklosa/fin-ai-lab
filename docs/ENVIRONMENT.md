@@ -72,3 +72,4 @@ Uzupełniana przy każdym teście importu.
 | `numpy` | 2.5.3 | import + `array.sum()` | 2026-09-16 | OK, bez problemów z AVX2 |
 | `pandas` | 3.0.5 | import + `DataFrame.sum()` | 2026-09-16 | OK |
 | `yfinance` | 1.7.0 | import + `Ticker('AAPL').history()` (żywe pobranie) | 2026-09-16 | OK, ekstra `portfolio` (P1-S4) |
+| `pypdf` | 6.19.0 | import + parsowanie realnego 10-K SEC (extract_text, outline) | 2026-09-16 | OK, czysty Python (bez natywnych rozszerzeń) — ekstra `rag` (P2-S1) |
