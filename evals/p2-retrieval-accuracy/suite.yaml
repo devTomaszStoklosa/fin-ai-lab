@@ -1,0 +1,8 @@
+name: p2-retrieval-accuracy
+dataset_version: 1
+target: fin_ai_lab.filings_rag.qa_target:retrieval_target
+graders:
+  - type: exact
+    field: top_1_company
+repeats: 1
+concurrency: 1
