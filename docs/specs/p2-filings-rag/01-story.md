@@ -1,6 +1,6 @@
 # p2-filings-rag - Zapytaj raport: RAG na sprawozdaniach spółek
 
-Status: Ready for ba
+Status: Ready for architect
 Owner role: PO
 Upstream: -
 Links: docs/ROADMAP.md, docs/DATA-SOURCES.md
@@ -65,6 +65,6 @@ Should (po P1). MVP cut line: P2-S1 do P2-S4 oraz P2-S6. P2-S5 — Should. P2-S7
 
 | # | Question | Owner | Due |
 |---|---|---|---|
-| 1 | Które spółki w korpusie? Propozycja: 5 dużych z US + 3 z GPW | Tomasz | przed P2-S1 |
+| 1 | ~~Które spółki w korpusie?~~ Odpowiedź: realne holdingi z portfela właściciela (`data/private/xtb/`, `data/private/bossa/`), nie dowolne przykłady — US (SEC 10-K/XBRL): Microsoft, Amazon, Oracle, Citigroup, NextEra Energy; GPW: Atrem, PKN Orlen, ING Bank Śląski | Tomasz | przed P2-S1 — odblokowane |
 | 2 | Embeddingi: Voyage (koszt) czy lokalny model (CPU)? Decyzja architekta po pomiarze | Architect | P2-S2 |
-| 3 | Źródło polskich sprawozdań: PDF z relacji inwestorskich czy KRS/eKRS? | Tomasz | przed P2-S7 |
+| 3 | ~~Źródło polskich sprawozdań: PDF z relacji inwestorskich czy KRS/eKRS?~~ Odpowiedź: PDF z relacji inwestorskich (spółki GPW wybrane w #1 mają dobrze dostępne raporty roczne w tej formie) | Tomasz | przed P2-S7 — odblokowane |
