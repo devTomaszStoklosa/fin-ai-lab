@@ -10,8 +10,11 @@ ADRs: docs/adr/0001-python-uv-single-package.md, docs/adr/0002-raw-sdk-before-fr
 - Zależy od `lab-foundation`: `core.llm`, `core.prompts`, `core.evals` już istnieją i mają zielone testy.
 - Format i struktura eksportów były nieznane w momencie pisania `01-story.md`/`02-spec.md`; teraz są dostępne prawdziwe pliki w `data/private/` (poza gitem). Sprawdzenie ich zmienia zakres:
   - `data/private/bossa/hisPW.csv` to **historia transakcji** (kolumny: `data;papier;isin;ilość;K/S;cena;wartość;prowizja;po prowizji;waluta`; `;`, Windows-1250), nie eksport pozycji — nie jest celem P1-S1.
-  - `data/private/xtb/*.xlsx` ma trzy arkusze (`Closed Positions`, `Cash Operations`, `Open Positions`); `Open Positions` to rachunek CFD: `Product, Instrument/Position, Ticker, Category, Type, Volume, Value, Current price, Open price, Open time (UTC), Stop Loss, Take Profit, Commission, Margin, Swap, Rollover, Open Conversion Rate` — **bez kolumny ISIN**.
+  - `data/private/xtb/*.xlsx` ma trzy arkusze (`Closed Positions`, `Cash Operations`, `Open Positions`); `Open Positions` to rachunek CFD: `Product, Instrument/Position, Ticker, Category, Type, Volume, Value, Current price, Open price, Open time (UTC), Stop Loss, Take Profit, Net Profit %, Net Profit, Gross Profit, Margin, Open Commission, Swap, Rollover` — **bez kolumny ISIN**.
+  - Arkusz `Open Positions` ma wiersze metadanych konta przed nagłówkiem (nagłówek dopiero w wierszu 9) i pod nim przeplot **wierszy podsumowania instrumentu** (`Category` niepuste, `Volume`/`Value`/`Open price` to suma/średnia ważona wszystkich otwartych transakcji tego instrumentu) z **wierszami pojedynczych transakcji** (`Category` puste, `Type='BUY'`/`'SELL'`, `Instrument/Position` = numeryczny ID transakcji, nie nazwa). Kanoniczna „Pozycja" z `02-spec.md` odpowiada wierszowi podsumowania, nie wierszowi transakcji.
 - Decyzja właściciela (ta sesja): P1-S1 celuje w XTB `Open Positions`. Pozycje bez ISIN nie wywołują REQ-020 (warunek "When a position has an ISIN") i zostają ze statusem `unresolved` — to jest zgodne z AC-4, nie wymaga zmiany `02-spec.md`. Fallback identyfikacji po tickerze jest świadomie odłożony na Later (bez zapotrzebowania na niego dziś nie projektujemy go).
+- Decyzja właściciela: reguła „Duplikaty" z `02-spec.md` kluczuje po ISIN; dla XTB (bez ISIN) klucz to `(broker, account_type, ticker)` w ramach jednego importu — sumowanie i ostrzeżenie jak w oryginalnej regule.
+- Decyzja właściciela: `account_type` dla XTB CFD to stała `regular` zapisana w `ParserConfig`, nie odczytywana z żadnej kolumny pliku (rachunek CFD nie jest polskim rachunkiem maklerskim z IKE/IKZE).
 - Decyzja właściciela: waluta bazowa raportu — **PLN, na stałe** (nie parametr runtime).
 - Decyzja właściciela: klasyfikacja sektorowa (P1-S4) — **LLM z evalem**. `02-spec.md` REQ-030 nie wymienia dziś sektora jako liczonej metryki (tylko `01-story.md`'s "Dependencies and risks" go zakłada) — BA powinien dopisać linię do REQ-030 przed startem P1-S4; ten projekt architektoniczny już zakłada komponent `sectors/`.
 - Decyzja właściciela: maskowanie PII (REQ-006) maskuje **wartości komórek**, nie nagłówki — model widzi strukturę (nazwy i pozycje kolumn), nie treść danych osobowych.
@@ -162,16 +165,28 @@ class Portfolio(BaseModel):
     base_currency: Literal["PLN"] = "PLN"
     valuation_date: date
 
+class RowFilter(BaseModel):
+    # wiersz danych liczy się jako pozycja tylko, gdy spełnia oba warunki;
+    # potrzebne dla plików z wierszami podsumowania i wierszami transakcji
+    # przeplecionymi w jednej tabeli (np. XTB Open Positions)
+    require_non_empty: list[str] = []         # nazwy kolumn po nagłówku
+    require_empty: list[str] = []
+
 class ParserConfig(BaseModel):
     broker: str
     version: int
-    column_mapping: dict[str, str]            # nagłówek pliku -> pole Position
+    sheet_name: str | None = None             # XLSX: który arkusz z wielu
+    header_row: int = 1                       # 1-indeksowany wiersz z nagłówkami
+    row_filter: RowFilter | None = None
+    expected_headers: list[str]                # pełny wiersz nagłówków — do sygnatury
+    column_mapping: dict[str, str]             # podzbiór faktycznie mapowany: nagłówek -> pole Position
     number_format: Literal["pl", "en"]
     date_format: str
     encoding: str
     delimiter: str | None
 
-# Sygnatura formatu = hash(nagłówki znormalizowane + delimiter + encoding)
+# Sygnatura formatu = hash(nagłówki znormalizowane + delimiter + encoding + sheet_name)
+# dla XLSX delimiter/encoding to stałe sentinel (brak separatora/kodowania tekstowego)
 def detect_signature(raw_file: bytes) -> str: ...
 
 class ParserRegistry:
