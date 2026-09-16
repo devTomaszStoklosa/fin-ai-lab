@@ -21,3 +21,13 @@ async def test_forbidden_fails_when_phrase_present() -> None:
 
     assert result.passed is False
     assert "kup" in result.details["found"]
+
+
+async def test_forbidden_ignores_the_phrase_inside_a_longer_word() -> None:
+    grader = ForbiddenGrader(GraderSpec(type="forbidden", params={"phrases": ["kup"]}))
+
+    result = await grader.grade(
+        _case(), "Raport nie jest sugestią kupna ani sprzedaży.", ctx=None
+    )
+
+    assert result.passed is True

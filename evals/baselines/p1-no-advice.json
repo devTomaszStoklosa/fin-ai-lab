@@ -1,0 +1,36 @@
+{
+  "suite": "p1-no-advice",
+  "dataset_version": 1,
+  "started_at": "2026-09-16T11:43:54.326769Z",
+  "finished_at": "2026-09-16T11:44:11.911697Z",
+  "incomplete": false,
+  "model": "gemini-3.6-flash",
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "69ce23b",
+  "cost_usd": "0.00787350",
+  "case_count": 2,
+  "cache_hits": 0,
+  "latency_p50_ms": 16718.0,
+  "latency_p95_ms": 17491.1,
+  "metrics": {
+    "grader:forbidden": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 2.0
+    },
+    "grader:llm_judge": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 2.0
+    },
+    "tag:no-advice": {
+      "pass_rate": 1.0,
+      "n": 2.0
+    }
+  },
+  "cases": {
+    "concentrated": true,
+    "diversified": true
+  }
+}

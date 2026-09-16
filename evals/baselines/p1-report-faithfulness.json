@@ -1,0 +1,31 @@
+{
+  "suite": "p1-report-faithfulness",
+  "dataset_version": 1,
+  "started_at": "2026-09-16T11:41:21.616910Z",
+  "finished_at": "2026-09-16T11:41:37.063337Z",
+  "incomplete": false,
+  "model": "gemini-3.6-flash",
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "69ce23b",
+  "cost_usd": "0.00842850",
+  "case_count": 2,
+  "cache_hits": 0,
+  "latency_p50_ms": 13696.0,
+  "latency_p95_ms": 15263.8,
+  "metrics": {
+    "grader:exact": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 2.0
+    },
+    "tag:faithfulness": {
+      "pass_rate": 1.0,
+      "n": 2.0
+    }
+  },
+  "cases": {
+    "concentrated": true,
+    "diversified": true
+  }
+}
