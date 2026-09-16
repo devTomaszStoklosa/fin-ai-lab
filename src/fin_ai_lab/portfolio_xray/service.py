@@ -4,6 +4,7 @@ from datetime import date
 from fin_ai_lab.core.llm.client import LlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
+from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.importer import ImportResult, deduplicate_positions, import_xlsx
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.correction import (
@@ -33,6 +34,8 @@ async def import_file(
     prompt_registry: PromptRegistry | None = None,
     model: str | None = None,
     on_new_config_proposed: ApprovalCallback | None = None,
+    openfigi_client: OpenFigiClient | None = None,
+    broker_market: str | None = None,
 ) -> ImportResult:
     sheets = read_xlsx_sheets(file_bytes)
     injection_flags = _flag_all_sheets(sheets)
@@ -46,7 +49,10 @@ async def import_file(
             market_currency=market_currency,
             registry=registry,
         )
-        return result.model_copy(update={"warnings": result.warnings + injection_flags})
+        positions = await _resolve_identifications(result.positions, openfigi_client, broker_market)
+        return result.model_copy(
+            update={"positions": positions, "warnings": result.warnings + injection_flags}
+        )
 
     if llm_client is None or prompt_registry is None or model is None or broker_hint is None:
         return ImportResult(positions=[], errors=["Unknown file format"], warnings=injection_flags)
@@ -76,7 +82,38 @@ async def import_file(
 
     registry.save(config)
     merged, dedup_warnings = deduplicate_positions(positions)
+    merged = await _resolve_identifications(merged, openfigi_client, broker_market)
     return ImportResult(positions=merged, errors=[], warnings=dedup_warnings + injection_flags)
+
+
+async def _resolve_identifications(
+    positions: list[Position],
+    openfigi_client: OpenFigiClient | None,
+    broker_market: str | None,
+) -> list[Position]:
+    if openfigi_client is None:
+        return positions
+
+    resolved = []
+    for position in positions:
+        if position.isin is None:
+            resolved.append(position)
+            continue
+        currency = position.market_currency or position.cost_currency or "PLN"
+        identification = await openfigi_client.resolve_by_isin(
+            position.isin, currency, broker_market
+        )
+        resolved.append(
+            position.model_copy(
+                update={
+                    "resolution_status": identification.status,
+                    "figi": identification.figi,
+                    "exchange_code": identification.exchange_code,
+                    "identification_rule": identification.identification_rule,
+                }
+            )
+        )
+    return resolved
 
 
 def _flag_all_sheets(sheets: dict[str, list[tuple[object, ...]]]) -> list[str]:

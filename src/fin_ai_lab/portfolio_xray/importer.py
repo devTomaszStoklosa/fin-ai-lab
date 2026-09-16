@@ -89,11 +89,13 @@ def build_position(
     quantity = mapped.pop("quantity", None)
     market_value = mapped.pop("market_value", None)
     avg_cost = mapped.pop("avg_cost", None)
+    isin = mapped.pop("isin", None)
 
     return Position(
         broker=broker,
         account_type=account_type,
         instrument_name=str(mapped.get("instrument_name", "")),
+        isin=str(isin) if isin else None,
         symbol=str(mapped["symbol"]) if mapped.get("symbol") is not None else None,
         asset_class=asset_class,
         quantity=Decimal(str(quantity)),

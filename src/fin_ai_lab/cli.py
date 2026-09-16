@@ -15,6 +15,7 @@ from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
+from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
 from fin_ai_lab.portfolio_xray.service import import_file
@@ -87,6 +88,12 @@ def import_positions(
     yes: bool = typer.Option(
         False, "--yes", help="Accept a newly proposed parser config without asking."
     ),
+    broker_market: str | None = typer.Option(
+        None, "--broker-market", help="Exchange code to prefer when an ISIN has several listings."
+    ),
+    no_identify: bool = typer.Option(
+        False, "--no-identify", help="Skip OpenFIGI lookups for positions that have an ISIN."
+    ),
 ) -> None:
     if account_type not in get_args(AccountType):
         typer.echo(f"Invalid account type '{account_type}'", err=True)
@@ -114,6 +121,8 @@ def import_positions(
             prompt_registry=prompt_registry,
             model=model,
             on_new_config_proposed=approve,
+            openfigi_client=None if no_identify else OpenFigiClient(),
+            broker_market=broker_market,
         )
     )
 

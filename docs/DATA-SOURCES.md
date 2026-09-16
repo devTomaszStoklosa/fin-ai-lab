@@ -23,7 +23,7 @@ Werdykty licencyjne dla źródeł wspólnych z Analizoteką pochodzą z jej plan
 | GDELT DOC 2.0 API | wyszukiwanie artykułów | nie | **1 req / 5 s, ryzyko bana IP** | tylko ad-hoc | nie w automatach | P3 |
 | RSS Bankier (`bankier.pl/rss/wiadomosci.xml`, `/gielda.xml`) | nagłówki i leady newsów PL | nie | brak | tak, lokalny korpus | tylko tytuł ≤ 120 i streszczenie ≤ 150 znaków (art. 15 DSM) | P3, P4 |
 | RSS Strefa Inwestorów (`strefainwestorow.pl/rss.xml`) | newsy PL; `description` ≈ cały artykuł | nie | brak | tak, lokalny korpus | jak wyżej — przycinanie krytyczne | P3, P4 |
-| OpenFIGI | ISIN → FIGI, ticker, giełda, typ instrumentu | opcjonalny (wyższe limity) | zależny od klucza — sprawdź dokumentację | tak | sprawdź warunki | P1 |
+| OpenFIGI | ISIN → FIGI, ticker, giełda, typ instrumentu | opcjonalny (wyższe limity) | bez klucza: 25 req/min, 10 zadań/request; z kluczem: 25 req/6s, 100 zadań/request (zweryfikowane 2026-09-16, `api.openfigi.com/api/documentation`) | tak | sprawdź warunki | P1 |
 | yfinance (Yahoo) | historyczne ceny; GPW z sufiksem `.WA` | nie | nieoficjalne, bywa blokowane | **tylko lokalnie** | **nie** | P1, P3, P5 |
 | KRS / eKRS | roczne sprawozdania finansowe spółek PL (z opóźnieniem) | nie | brak | tak | tak (informacja publiczna) | P2 (opcjonalnie) |
 | Raporty okresowe spółek GPW (PDF z relacji inwestorskich) | sprawozdania PL | nie | pobieranie ręczne, kilka plików | tak | sprawdź licencję | P2 |
