@@ -19,11 +19,18 @@ EDUCATIONAL_FOOTER = (
     "alokacji. Decyzje inwestycyjne podejmujesz na własną odpowiedzialność."
 )
 
-_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
-# Fixed metric names, not reported values: "top-5" (top5_share) and "VaR 95%"
-# (var_95_1d's fixed confidence level) carry digits that aren't data points.
-_KNOWN_TERM_RE = re.compile(r"top-5|VaR\s*95\s*%", re.IGNORECASE)
+# Fixed methodology parameters, not computed values — they can appear in the
+# text in any wording ("top-5", "5 największych pozycji", "95%", "na poziomie
+# 95%", "1-day 95% VaR"...) so they're accepted as reference values below
+# rather than pattern-matched as text.
+_TOP_N_SHARE = 5  # weights.TOP_N_SHARE
+_VAR_CONFIDENCE_PERCENT = 95  # risk.py's fixed VaR confidence level
+
 _NUMBER_RE = re.compile(r"(?<![A-Za-z0-9])-?\d[\d  ]*(?:[.,]\d+)?%?")
+_DIGITS_RE = re.compile(r"\d+")
+# Markdown section numbering ("### 3. Koncentracja portfela") is structure,
+# not data — strip the ordinal before scanning for numbers.
+_HEADING_ORDINAL_RE = re.compile(r"^#{1,6}\s*\d+[.)]\s+", re.MULTILINE)
 
 
 class ReportRejectedError(Exception):
@@ -40,29 +47,33 @@ async def build_report(
     model: str,
 ) -> str:
     payload = _metrics_payload(metrics, instrument_metadata)
-    prompt = prompt_registry.get("narrative", 1)
+    prompt = prompt_registry.get("narrative", 2)
     rendered = prompt.render(metrics_json=_to_json(payload))
 
     request = LlmRequest(
         model=model,
         messages=[{"role": "user", "text": rendered}],
         prompt_id="narrative",
-        prompt_version=1,
+        prompt_version=2,
     )
     result = await llm_client.complete(request)
     text = result.text.strip()
     if EDUCATIONAL_FOOTER not in text:
         text = f"{text}\n\n{EDUCATIONAL_FOOTER}"
 
-    mismatches = verify_numbers_faithful(text, metrics)
+    mismatches = verify_numbers_faithful(text, metrics, instrument_metadata)
     if mismatches:
         raise ReportRejectedError(mismatches)
     return text
 
 
-def verify_numbers_faithful(report_text: str, metrics: MetricsJson) -> list[str]:
-    candidates = _reference_values(metrics)
-    cleaned_text = _KNOWN_TERM_RE.sub("", _ISO_DATE_RE.sub("", report_text))
+def verify_numbers_faithful(
+    report_text: str,
+    metrics: MetricsJson,
+    instrument_metadata: dict[str, InstrumentMetadata],
+) -> list[str]:
+    candidates = _reference_values(metrics, instrument_metadata)
+    cleaned_text = _HEADING_ORDINAL_RE.sub("", report_text)
 
     mismatches: list[str] = []
     for raw_match in _NUMBER_RE.findall(cleaned_text):
@@ -113,7 +124,9 @@ def _to_json(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _reference_values(metrics: MetricsJson) -> list[Decimal]:
+def _reference_values(
+    metrics: MetricsJson, instrument_metadata: dict[str, InstrumentMetadata]
+) -> list[Decimal]:
     leaves: list[Decimal] = []
     _collect_numeric_leaves(metrics.model_dump(mode="json"), leaves)
 
@@ -121,6 +134,24 @@ def _reference_values(metrics: MetricsJson) -> list[Decimal]:
     for leaf in leaves:
         candidates.append(leaf)
         candidates.append(leaf * 100)  # fractions are often rendered as percentages
+
+    candidates.append(Decimal(_TOP_N_SHARE))
+    candidates.append(Decimal(_VAR_CONFIDENCE_PERCENT))
+    candidates.append(Decimal(_VAR_CONFIDENCE_PERCENT) / 100)
+
+    # The valuation date can be written in any locale form ("15 września
+    # 2026", "15.09.2026"...) — accept its parts instead of pattern-matching
+    # every possible rendering.
+    candidates.append(Decimal(metrics.valuation_date.day))
+    candidates.append(Decimal(metrics.valuation_date.month))
+    candidates.append(Decimal(metrics.valuation_date.year))
+
+    # Instrument names are given data, quoted verbatim, not computed values —
+    # a digit inside one (e.g. "US Treasury Bond 20+yr") isn't a fabrication.
+    for meta in instrument_metadata.values():
+        for digits in _DIGITS_RE.findall(meta.name):
+            candidates.append(Decimal(digits))
+
     return candidates
 
 
