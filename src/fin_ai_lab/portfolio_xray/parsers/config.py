@@ -23,3 +23,19 @@ class ParserConfig(BaseModel):
     date_format: str = "%Y-%m-%d"
     encoding: str = "utf-8"
     delimiter: str | None = None
+
+
+class ParserConfigProposal(BaseModel):
+    """What the model proposes for an unrecognized format: everything in
+    ParserConfig except broker/version, which the caller assigns — the model
+    should not invent the broker name or pick a version number."""
+
+    sheet_name: str | None = None
+    header_row: int = 1
+    row_filter: RowFilter | None = None
+    expected_headers: list[str]
+    column_mapping: dict[str, str]
+    number_format: Literal["pl", "en"] = "en"
+    date_format: str = "%Y-%m-%d"
+    encoding: str = "utf-8"
+    delimiter: str | None = None

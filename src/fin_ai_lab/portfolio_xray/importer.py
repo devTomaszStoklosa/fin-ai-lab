@@ -68,7 +68,7 @@ def import_xlsx(
     if errors:
         return ImportResult(positions=[], errors=errors, warnings=[])
 
-    merged, warnings = _deduplicate(positions)
+    merged, warnings = deduplicate_positions(positions)
     return ImportResult(positions=merged, errors=[], warnings=warnings)
 
 
@@ -109,7 +109,7 @@ def _dedup_key(position: Position) -> tuple[str, str, str | None]:
     return (position.broker, position.account_type, position.symbol)
 
 
-def _deduplicate(positions: list[Position]) -> tuple[list[Position], list[str]]:
+def deduplicate_positions(positions: list[Position]) -> tuple[list[Position], list[str]]:
     merged: dict[tuple[str, str, str | None], Position] = {}
     warnings: list[str] = []
 

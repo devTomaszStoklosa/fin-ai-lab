@@ -44,9 +44,16 @@ def test_wrong_length_isin_is_invalid() -> None:
     assert isin_checksum_is_valid("US037833100") is False
 
 
-def test_unknown_broker_is_rejected() -> None:
+def test_new_broker_name_is_accepted() -> None:
+    # Not a closed allowlist: P1-S2 onboards new brokers at runtime.
+    position = _position(broker="some-new-broker")
+
+    assert position.broker == "some-new-broker"
+
+
+def test_empty_broker_is_rejected() -> None:
     with pytest.raises(ValidationError, match="Unknown broker"):
-        _position(broker="unknown-broker")
+        _position(broker="")
 
 
 def test_zero_quantity_is_rejected() -> None:
