@@ -82,30 +82,66 @@ def test_verify_numbers_faithful_accepts_matching_numbers() -> None:
     metrics = _metrics()
     text = "Waga w Technology to 60%, a zmienność roczna wynosi 18%."
 
-    assert verify_numbers_faithful(text, metrics) == []
+    assert verify_numbers_faithful(text, metrics, {}) == []
 
 
 def test_verify_numbers_faithful_flags_a_fabricated_number() -> None:
     metrics = _metrics()
     text = "Zmienność roczna portfela wynosi 77%."
 
-    mismatches = verify_numbers_faithful(text, metrics)
+    mismatches = verify_numbers_faithful(text, metrics, {})
 
     assert mismatches == ["77%"]
 
 
-def test_verify_numbers_faithful_ignores_iso_dates() -> None:
+def test_verify_numbers_faithful_accepts_iso_dates() -> None:
     metrics = _metrics()
     text = "Wycena na dzień 2026-09-15, waluta bazowa PLN."
 
-    assert verify_numbers_faithful(text, metrics) == []
+    assert verify_numbers_faithful(text, metrics, {}) == []
+
+
+def test_verify_numbers_faithful_accepts_the_valuation_date_written_as_polish_prose() -> None:
+    metrics = _metrics()
+    text = "Raport sporządzono na dzień 15 września 2026 r."
+
+    assert verify_numbers_faithful(text, metrics, {}) == []
+
+
+def test_verify_numbers_faithful_accepts_top5_share_phrased_without_a_hyphen() -> None:
+    metrics = _metrics()
+    text = "Udział 5 największych pozycji (top-5 share) wynosi 100%."
+
+    assert verify_numbers_faithful(text, metrics, {}) == []
+
+
+def test_verify_numbers_faithful_accepts_var_confidence_in_any_word_order() -> None:
+    metrics = _metrics()
+    text = "Historyczna 1-dniowa wartość zagrożona na poziomie 95% (1-day 95% VaR) to 2%."
+
+    assert verify_numbers_faithful(text, metrics, {}) == []
+
+
+def test_verify_numbers_faithful_accepts_digits_from_instrument_names() -> None:
+    metrics = _metrics()
+    metadata = {"0": InstrumentMetadata(name="US Treasury Bond 20+yr", category="bond")}
+    text = "Portfel zawiera US Treasury Bond 20+yr."
+
+    assert verify_numbers_faithful(text, metrics, metadata) == []
+
+
+def test_verify_numbers_faithful_ignores_numbered_markdown_headings() -> None:
+    metrics = _metrics()
+    text = "### 3. Koncentracja portfela\nHHI wynosi 0,52."
+
+    assert verify_numbers_faithful(text, metrics, {}) == []
 
 
 def test_verify_numbers_faithful_tolerates_small_rounding() -> None:
     metrics = _metrics()
     text = "Udział top-5 to 99.7%."  # true value is 100%, within tolerance
 
-    assert verify_numbers_faithful(text, metrics) == []
+    assert verify_numbers_faithful(text, metrics, {}) == []
 
 
 async def test_build_report_appends_footer_when_model_omits_it() -> None:
