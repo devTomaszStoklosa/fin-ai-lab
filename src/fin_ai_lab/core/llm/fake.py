@@ -4,6 +4,7 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 from fin_ai_lab.core.llm.client import LlmRequest, LlmResult, TokenUsage
+from fin_ai_lab.core.llm.embeddings import EmbeddingResult
 
 
 class FakeLlmClient:
@@ -31,3 +32,24 @@ class FakeLlmClient:
             trace_id=uuid.uuid4().hex,
             span_id=uuid.uuid4().hex,
         )
+
+
+class FakeEmbeddingClient:
+    def __init__(self, dim: int = 8) -> None:
+        self._dim = dim
+        self.calls: list[list[str]] = []
+
+    async def embed(self, texts: list[str], model: str) -> EmbeddingResult:
+        self.calls.append(texts)
+        return EmbeddingResult(
+            vectors=[_deterministic_vector(text, self._dim) for text in texts],
+            cost_usd=Decimal(0),
+        )
+
+
+def _deterministic_vector(text: str, dim: int) -> list[float]:
+    # Same text -> same vector (for cache-hit tests), different text -> a
+    # different vector — not a real embedding, just enough to exercise
+    # cosine similarity and caching without a network call.
+    seed = sum(ord(char) for char in text) or 1
+    return [((seed * (index + 1)) % 97) / 97 for index in range(dim)]

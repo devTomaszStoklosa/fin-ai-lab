@@ -68,7 +68,9 @@ Audyt kosztów istniejącego kodu: brak lokalnego skilla — przejrzyj ręcznie 
 
 ## Embeddingi
 
-Gemini udostępnia własny model embeddingów (np. `text-embedding-004` / nowszy — zweryfikuj aktualną nazwę), w tym w darmowym tierze — inaczej niż Anthropic, które nie ma własnego modelu embeddingów. Alternatywy zostają dostępne: Voyage AI (wariant finansowy) albo modele open-source (BGE-M3, multilingual-e5, MMLW dla polskiego) — te ostatnie z uwagą na CPU bez AVX2.
+Gemini udostępnia własny model embeddingów, w tym w darmowym tierze — inaczej niż Anthropic, które nie ma własnego modelu embeddingów. Alternatywy zostają dostępne: Voyage AI (wariant finansowy) albo modele open-source (BGE-M3, multilingual-e5, MMLW dla polskiego) — te ostatnie z uwagą na CPU bez AVX2.
+
+Użyty w P2 (`core/llm/embeddings.py`, zweryfikowane 2026-09-16): `gemini-embedding-2` — jedyny model embeddingów wciąż wyceniony na `ai.google.dev/gemini-api/docs/pricing` ($0.20/1M tokenów wejścia, darmowy tier istnieje); `gemini-embedding-001` nadal odpowiada na żywe wywołanie i wsparłby `task_type` (`RETRIEVAL_DOCUMENT`/`RETRIEVAL_QUERY`, lepsze dla asymetrycznego retrieval), ale zniknął z aktualnej strony cenowej — po historii z `gemini-2.5-flash` (patrz `PRICES` w `core/llm/pricing.py`) wybrany model, który dokumentacja wciąż aktywnie opisuje, nie ten, który akurat jeszcze odpowiada. `gemini-embedding-2` nie wspiera `task_type`; wielotekstowe wywołanie wymaga owinięcia każdego tekstu w osobny `types.Content`, inaczej API agreguje wszystkie teksty w jeden wektor (zweryfikowane empirycznie, nieudokumentowane wprost). SDK nie zwraca liczby tokenów dla `embed_content` (`metadata`/`statistics` puste) — koszt liczony z szacunku znaki/4, nie z realnego usage.
 
 ## Warunki użycia
 

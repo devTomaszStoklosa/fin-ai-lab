@@ -75,4 +75,18 @@ PRICES: dict[str, ModelPrice] = {
             ),
         ]
     ),
+    # gemini-embedding-001 works with a live call but has no pricing row on
+    # ai.google.dev/gemini-api/docs/pricing anymore (only gemini-embedding-2
+    # is listed there, 2026-09-16) — after getting burned once already by
+    # relying on gemini-2.5-flash after it quietly aged out, prefer the
+    # model the current docs actually price. No output tokens for embeddings.
+    "gemini-embedding-2": ModelPrice(
+        tiers=[
+            PriceTier(
+                up_to_input_tokens=None,
+                input_price_per_million=Decimal("0.20"),
+                output_price_per_million=Decimal("0"),
+            ),
+        ]
+    ),
 }

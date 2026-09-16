@@ -90,9 +90,9 @@ Jedna linia na zdarzenie w `traces/<data>.jsonl`:
 | Pole | Opis |
 |---|---|
 | `trace_id`, `span_id`, `parent_span_id` | korelacja kroków agenta |
-| `ts`, `kind` | czas; `llm` / `tool` / `step` / `eval` |
+| `ts`, `kind` | czas; `llm` / `embedding` / `tool` / `step` / `eval` |
 | `name` | np. `portfolio_xray.map_columns` |
-| `model`, `prompt_id`, `prompt_version` | dla `kind = llm` |
+| `model`, `prompt_id`, `prompt_version` | dla `kind = llm`; `model` też dla `kind = embedding` (P2) |
 | `usage`, `cost_usd`, `latency_ms` | koszty i czas |
 | `input_ref`, `output_ref` | skrót lub ścieżka do treści; pełna treść tylko lokalnie |
 | `error` | typ i komunikat |
