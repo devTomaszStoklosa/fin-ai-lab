@@ -409,6 +409,7 @@ portfolio = [
     { name = "yfinance" },
 ]
 rag = [
+    { name = "numpy" },
     { name = "pypdf" },
 ]
 
@@ -424,6 +425,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=2.23.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", marker = "extra == 'portfolio'", specifier = ">=2.0" },
+    { name = "numpy", marker = "extra == 'rag'", specifier = ">=2.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", marker = "extra == 'portfolio'", specifier = ">=2.2" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
