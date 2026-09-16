@@ -1,0 +1,38 @@
+{
+  "suite": "p2-answer-accuracy",
+  "dataset_version": 1,
+  "started_at": "2026-09-16T13:50:19.137492Z",
+  "finished_at": "2026-09-16T13:50:51.184433Z",
+  "incomplete": false,
+  "model": "gemini-3.6-flash",
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "7e50043",
+  "cost_usd": "0.00474975",
+  "case_count": 5,
+  "cache_hits": 0,
+  "latency_p50_ms": 765.0,
+  "latency_p95_ms": 20577.599999999995,
+  "metrics": {
+    "grader:exact": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 3.0
+    },
+    "tag:in-corpus": {
+      "pass_rate": 0.5,
+      "n": 4.0
+    },
+    "tag:out-of-corpus": {
+      "pass_rate": 1.0,
+      "n": 1.0
+    }
+  },
+  "cases": {
+    "microsoft-ai-risk": true,
+    "amazon-seasonal-risk": true,
+    "oracle-cloud-risk": false,
+    "nextera-weather-risk": false,
+    "nvidia-not-in-corpus": true
+  }
+}

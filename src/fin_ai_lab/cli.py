@@ -25,6 +25,7 @@ from fin_ai_lab.portfolio_xray.service import import_file
 PORTFOLIO_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
 SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
 REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
+FILINGS_RAG_PROMPTS_DIR = Path("src/fin_ai_lab/filings_rag/prompts")
 
 app = typer.Typer()
 portfolio_app = typer.Typer()
@@ -54,6 +55,7 @@ def eval_command(
     prompts.load_dir(PORTFOLIO_PROMPTS_DIR)
     prompts.load_dir(SECTOR_PROMPTS_DIR)
     prompts.load_dir(REPORT_PROMPTS_DIR)
+    prompts.load_dir(FILINGS_RAG_PROMPTS_DIR)
 
     try:
         summary, run_dir = asyncio.run(

@@ -17,6 +17,7 @@ DEFAULT_MIN_INTERVAL_S = 1 / 10
 # nearly all 10-K filers — ASSUMPTION, revisit if the P2-S2 golden set shows
 # wrong section labels for a filer that formats headers unusually.
 _ITEM_HEADER_RE = re.compile(r"^\s*item\s+\d+[a-z]?\.\s*.+$", re.IGNORECASE | re.MULTILINE)
+_ITEM_NUMBER_RE = re.compile(r"item\s+(\d+[a-z]?)", re.IGNORECASE)
 
 _BLOCK_TAGS = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6"}
 _SKIP_TAGS = {"script", "style"}
@@ -62,30 +63,37 @@ def extract_sections(html: str) -> list[tuple[str, str]]:
     """Split filing text into (item_label, section_text) at 'Item N.' headers.
 
     A 10-K's table of contents repeats every "Item N." label near-empty
-    before the real, much longer body section — so for each label (matched
-    case-insensitively, since filers render the TOC and the body headers in
-    different letter case) only the longest occurrence is kept.
+    before the real, much longer body section, and filers spell the same
+    label differently between the TOC and the body (case, or a missing
+    space after the period: "Item 1A. Risk Factors" vs "Item 1A.Risk
+    Factors") — so entries are grouped by the item NUMBER alone (matched
+    case-insensitively), not the full label text, and only the longest
+    occurrence per number is kept.
     """
     text = _html_to_text(html)
     matches = list(_ITEM_HEADER_RE.finditer(text))
     if not matches:
         return [("Full document", text)]
 
-    longest_by_label: dict[str, tuple[str, str]] = {}
+    longest_by_number: dict[str, tuple[str, str]] = {}
     for index, match in enumerate(matches):
         label = " ".join(match.group().split())
+        number_match = _ITEM_NUMBER_RE.match(label)
+        if number_match is None:
+            continue
+        key = number_match.group(1).lower()
+
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         section_text = text[start:end].strip()
         if not section_text:
             continue
 
-        key = label.lower()
-        existing = longest_by_label.get(key)
+        existing = longest_by_number.get(key)
         if existing is None or len(section_text) > len(existing[1]):
-            longest_by_label[key] = (label, section_text)
+            longest_by_number[key] = (label, section_text)
 
-    return list(longest_by_label.values())
+    return list(longest_by_number.values())
 
 
 class _TextExtractor(HTMLParser):

@@ -1,0 +1,9 @@
+name: p2-answer-accuracy
+dataset_version: 1
+target: fin_ai_lab.filings_rag.qa_target:answer_target
+model: gemini-3.6-flash
+graders:
+  - type: exact
+    field: refused
+repeats: 1
+concurrency: 1
