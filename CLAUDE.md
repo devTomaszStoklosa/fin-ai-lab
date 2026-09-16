@@ -28,7 +28,7 @@ Laboratorium nauki AI engineeringu (RAG, LLM i prompty, agenci, fine-tuning, eva
 | Cel | Komenda |
 |---|---|
 | Zależności bazowe | `uv sync` |
-| Zależności projektu | `uv sync --extra rag` · `--extra pulse` · `--extra ml` |
+| Zależności projektu | `uv sync --extra portfolio` · `--extra rag` · `--extra pulse` · `--extra ml` |
 | Testy | `uv run pytest -q` |
 | Lint | `uv run ruff check .` |
 | Formatowanie | `uv run ruff format .` |

@@ -69,4 +69,6 @@ Uzupełniana przy każdym teście importu.
 
 | Paczka | Wersja | Import i operacja testowa | Data | Uwagi |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| `numpy` | 2.5.3 | import + `array.sum()` | 2026-09-16 | OK, bez problemów z AVX2 |
+| `pandas` | 3.0.5 | import + `DataFrame.sum()` | 2026-09-16 | OK |
+| `yfinance` | 1.7.0 | import + `Ticker('AAPL').history()` (żywe pobranie) | 2026-09-16 | OK, ekstra `portfolio` (P1-S4) |

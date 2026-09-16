@@ -1,5 +1,7 @@
 from collections.abc import Callable
 
+import pytest
+
 
 def _check_pydantic_core() -> None:
     from pydantic import BaseModel
@@ -20,3 +22,19 @@ NATIVE_DEPENDENCY_CHECKS: list[tuple[str, Callable[[], None]]] = [
 def test_native_dependencies_work_on_this_cpu() -> None:
     for _name, check in NATIVE_DEPENDENCY_CHECKS:
         check()
+
+
+def test_numpy_works_on_this_cpu_when_installed() -> None:
+    # numpy/pandas/yfinance are the optional "portfolio" extra (P1's risk metrics),
+    # not a base dependency — skip rather than fail when it's not synced.
+    numpy = pytest.importorskip("numpy")
+
+    assert numpy.array([1.0, 2.0, 3.0]).sum() == 6.0
+
+
+def test_pandas_works_on_this_cpu_when_installed() -> None:
+    pandas = pytest.importorskip("pandas")
+
+    frame = pandas.DataFrame({"a": [1, 2, 3]})
+
+    assert frame["a"].sum() == 6
