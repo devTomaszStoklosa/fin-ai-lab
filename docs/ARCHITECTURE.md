@@ -152,7 +152,8 @@ Każda pozycja wymaga testu importu na tej maszynie przed dodaniem.
 
 | Extra | Kandydaci | Projekt |
 |---|---|---|
+| `portfolio` | `numpy`, `pandas`, `yfinance` (zweryfikowane na tej maszynie 2026-09-16) | P1 |
 | `rag` | `bm25s`, `pypdf`, `voyageai` | P2 |
-| `pulse` | `mcp`, `feedparser`, `yfinance` | P3 |
+| `pulse` | `mcp`, `feedparser`, `yfinance` (P1 już go dodał w `portfolio`) | P3 |
 | `ml` | `scikit-learn`, `transformers` (+ `torch` CPU po weryfikacji) | P4 |
 | `ui` | `fastapi`, `uvicorn` | P5 |

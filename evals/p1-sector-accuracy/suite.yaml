@@ -1,0 +1,9 @@
+name: p1-sector-accuracy
+dataset_version: 1
+target: fin_ai_lab.portfolio_xray.sector_target:target
+model: gemini-2.5-flash
+graders:
+  - type: exact
+    field: sector
+repeats: 1
+concurrency: 2

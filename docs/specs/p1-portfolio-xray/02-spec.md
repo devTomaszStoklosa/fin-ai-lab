@@ -48,7 +48,8 @@ Identyfikacja
 
 Metryki
 - REQ-030 (AC-5): The system shall compute in code: weights, allocation by asset class, currency and account type, HHI, effective number of positions and top-5 share.
-- REQ-031 (AC-5): Where daily price history of at least 250 trading days is available, the system shall compute annualized volatility, historical 1-day VaR at 95%, maximum drawdown and beta against the selected benchmark for the covered part of the portfolio.
+- REQ-030a: The system shall classify each equity position into a GICS-like sector via the model, and classify non-equity positions (etf, fund, bond, and other non-equity classes) by asset class instead of a sector; the report shall show allocation by this classification.
+- REQ-031 (AC-5): Where daily price history of at least 250 trading days is available, the system shall compute annualized volatility, historical 1-day VaR at 95%, maximum drawdown and beta against a benchmark given by the caller for the covered part of the portfolio. The system shall not assume a default benchmark.
 - REQ-032: If price history is missing for some positions, then the system shall report the coverage and compute risk metrics only for covered positions.
 - REQ-033: The system shall convert values to the base currency with NBP table A mid rates from the valuation date, or from the previous business day when that date has no table.
 
@@ -117,6 +118,7 @@ Metryki
 | VaR 95% 1D historyczny | minus 5. percentyl dziennych zwrotów portfela przy obecnych wagach |
 | Max drawdown | największy spadek wartości od szczytu przy obecnych wagach |
 | Beta | kowariancja zwrotów portfela i benchmarku / wariancja zwrotów benchmarku |
+| Sektor / kategoria | equity: sektor GICS-podobny (Technology, Financials, Industrials, Healthcare, Energy, Materials, Consumer, Real Estate, Utilities, Communication) przez model; etf/fund/bond/inne: kategoria = asset_class, nie sektor |
 
 ## Edge and error cases
 
@@ -147,7 +149,7 @@ Metryki
 | AC-2 | REQ-002, REQ-003 |
 | AC-3 | REQ-004, REQ-005 |
 | AC-4 | REQ-020, REQ-021 |
-| AC-5 | REQ-030, REQ-031, REQ-040, REQ-041 |
+| AC-5 | REQ-030, REQ-030a, REQ-031, REQ-040, REQ-041 |
 | AC-6 | REQ-042 |
 | AC-7 | REQ-007, REQ-008 |
 | AC-8 | REQ-009 |
@@ -155,10 +157,10 @@ Metryki
 
 ## Open questions
 
-| # | Question | Owner |
-|---|---|---|
-| 1 | Waluta bazowa — PLN? | Tomasz |
-| 2 | Benchmark do bety: WIG, ETF na MSCI ACWI czy wybór użytkownika? | Tomasz |
-| 3 | Tolerancja zgodności sumy z wartością portfela z pliku — 0,5%? | Tomasz |
-| 4 | Limit rozmiaru pliku? | Tomasz |
-| 5 | Klasyfikacja sektorów w MVP? | Tomasz |
+| # | Question | Owner | Status |
+|---|---|---|---|
+| 1 | ~~Waluta bazowa — PLN?~~ | Tomasz | Odpowiedź: PLN, na stałe (03-design.md) |
+| 2 | ~~Benchmark do bety~~ | Tomasz | Odpowiedź: parametr wywołania, bez wartości domyślnej (REQ-031) |
+| 3 | Tolerancja zgodności sumy z wartością portfela z pliku — 0,5%? | Tomasz | otwarte |
+| 4 | Limit rozmiaru pliku? | Tomasz | otwarte |
+| 5 | ~~Klasyfikacja sektorów w MVP?~~ | Tomasz | Odpowiedź: GICS-podobne dla equity, kategoria=asset_class dla reszty (REQ-030a) |
