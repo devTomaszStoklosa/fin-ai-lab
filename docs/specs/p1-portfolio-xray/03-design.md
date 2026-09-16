@@ -159,6 +159,10 @@ class Position(BaseModel):
     valuation_date: date
     resolution_status: Literal["resolved", "unresolved", "ambiguous"] = "unresolved"
     figi: str | None = None                   # REQ-020
+    ticker: str | None = None                 # REQ-020 — P1-S5: OpenFIGI already
+                                               # returned it, but it was dropped
+                                               # before this slice needed it for
+                                               # price history lookups
     exchange_code: str | None = None          # REQ-020
     identification_rule: str | None = None    # REQ-021 — jaka reguła wybrała notowanie
     suspicious_cells: list[str] = []          # REQ-008
@@ -228,6 +232,22 @@ async def classify_sector(position: Position) -> SectorClassification: ...
 
 async def build_report(metrics: MetricsJson, instrument_metadata: dict) -> str: ...
 def verify_numbers_faithful(report_text: str, metrics: MetricsJson) -> list[str]: ...  # REQ-041
+
+# P1-S5: MetricsJson/InstrumentMetadata were only a function signature until this
+# slice — concrete shape below, keyed by position index (str) so it lines up
+# with weights.WeightMetrics.weighted_positions and the risk price-history dict.
+class InstrumentMetadata(BaseModel):
+    name: str
+    category: str          # sector for equity, else asset_class-derived category (REQ-030a)
+    exchange_code: str | None = None
+    currency: str | None = None
+
+class MetricsJson(BaseModel):
+    valuation_date: date
+    base_currency: str
+    weights: WeightMetrics
+    risk: RiskMetrics | None = None
+    allocation_by_category: dict[str, Decimal]
 ```
 
 ### Format sygnatury i konfiguracji

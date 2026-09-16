@@ -108,6 +108,7 @@ async def _resolve_identifications(
                 update={
                     "resolution_status": identification.status,
                     "figi": identification.figi,
+                    "ticker": identification.ticker,
                     "exchange_code": identification.exchange_code,
                     "identification_rule": identification.identification_rule,
                 }

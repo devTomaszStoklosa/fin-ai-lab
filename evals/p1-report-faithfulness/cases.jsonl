@@ -1,0 +1,2 @@
+{"id": "diversified", "split": "dev", "input": {"fixture": "diversified"}, "expected": {"mismatches": []}, "tags": ["faithfulness"], "provenance": "synthetic"}
+{"id": "concentrated", "split": "dev", "input": {"fixture": "concentrated"}, "expected": {"mismatches": []}, "tags": ["faithfulness"], "provenance": "synthetic"}

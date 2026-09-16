@@ -48,6 +48,7 @@ class Position(BaseModel):
     valuation_date: date
     resolution_status: ResolutionStatus = "unresolved"
     figi: str | None = None
+    ticker: str | None = None
     exchange_code: str | None = None
     identification_rule: str | None = None
     suspicious_cells: list[str] = []

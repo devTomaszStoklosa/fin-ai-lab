@@ -183,6 +183,7 @@ async def test_import_file_resolves_identification_for_positions_with_isin(tmp_p
     assert result.errors == []
     assert result.positions[0].resolution_status == "resolved"
     assert result.positions[0].figi == "BBG000BLNNH6"
+    assert result.positions[0].ticker == "AAPL"
     assert stub.calls == [("US0378331005", "PLN", None)]
 
 
