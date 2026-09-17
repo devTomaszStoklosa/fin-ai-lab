@@ -113,7 +113,7 @@ Zero limitu wydatków do ustawienia — klucz zostaje bez billingu. Throttling p
 |---|---|---|---|---|
 | lab-foundation | Ready for dev | Ready for dev | Ready for dev | gotowe (F-1..F-4) |
 | p1-portfolio-xray | Ready for architect | Ready for architect | Ready for dev | gotowe (P1-S1..S6, evale zielone) |
-| p2-filings-rag | Ready for architect | Ready for dev | Ready for dev | P2-S1..S5 gotowe; S6 (cytaty/odmowy — eval) i S7 (GPW w golden set, pytania PL) w toku |
-| p3-market-pulse | Ready for architect | Ready for architect | — | — |
+| p2-filings-rag | Ready for architect | Ready for architect | Ready for dev | P2-S1..S5 gotowe; S6 (cytaty/odmowy — eval) i S7 (GPW w golden set, pytania PL) w toku |
+| p3-market-pulse | Ready for architect | Ready for architect | Ready for dev | P3-S1 do zrobienia |
 | p4-news-classifier | Ready for ba | — | — | — |
 | p5-investment-committee | Ready for ba | — | — | — |

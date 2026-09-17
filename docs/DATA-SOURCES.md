@@ -18,6 +18,7 @@ Werdykty licencyjne dla źródeł wspólnych z Analizoteką pochodzą z jej plan
 | SEC EDGAR (`data.sec.gov`, `sec.gov/Archives`) | listy zgłoszeń, 10-K/10-Q/8-K, XBRL `companyfacts`, `frames`, mapa `company_tickers.json` | nie, ale **wymagany `User-Agent` z kontaktem** (bez niego 403) | 10 req/s | tak | tak (domena publiczna USA) | P2, P5 |
 | FRED (`api.stlouisfed.org`) | makro USA, rentowności, stopy | **tak** (darmowy) | 120 req/min | tak | **per seria** — patrz niżej | P3 |
 | NBP (`api.nbp.pl`) | kursy walut (tabele A/B/C), złoto | nie | brak (zachowaj umiar) | tak | tak | P1, P3 |
+| NBP stopy procentowe (`static.nbp.pl/dane/stopy/stopy_procentowe.xml`) | aktualna stopa referencyjna/lombardowa/depozytowa NBP + data obowiązywania | nie | brak (zachowaj umiar) | tak | tak | P3 |
 | GUS BDL (`bdl.stat.gov.pl`) | statystyki PL | opcjonalny | 5/s anonimowo, 10/s z kluczem | tak | tak, **CC BY 4.0** (atrybucja) | P3 |
 | GDELT (feed plików) | artykuły, ton medialny | nie | brak | tak | tak (jawnie dozwolone) | P3, P4 |
 | GDELT DOC 2.0 API | wyszukiwanie artykułów | nie | **1 req / 5 s, ryzyko bana IP** | tylko ad-hoc | nie w automatach | P3 |

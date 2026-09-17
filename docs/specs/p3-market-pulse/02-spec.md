@@ -124,7 +124,7 @@ Alert
 
 | # | Question | Owner | Due |
 |---|---|---|---|
-| 1 | WIG20: `docs/DATA-SOURCES.md` mówi, że dane rynkowe/komunikaty GPW wymagają płatnej licencji, a `yfinance` (REQ-004) nie może być użyty w automacie. Czy WIG20 wypada z MVP (Could, przegląd manualny), czy jest inne darmowe źródło do zweryfikowania przez Architekta? | Architect (weryfikacja źródła) / Tomasz (decyzja zakresu) | przed P3-S1 |
-| 2 | Stopa referencyjna NBP: `api.nbp.pl` udokumentowane w `docs/DATA-SOURCES.md` dotyczy kursów walut i cen złota — Architekt musi zweryfikować, czy ta sama usługa (albo inna strona NBP) udostępnia stopę referencyjną w formie API, czy potrzebny jest scraping/dane ręczne. | Architect | przed P3-S1 |
+| 1 | ~~WIG20...~~ Odpowiedź Architekta (`03-design.md`): brak darmowego automatyzowalnego źródła (GPW płatna licencja, `yfinance` niestabilne, `stooq` chronione antybotem). WIG20 poza automatycznym briefem, dostępne tylko przez interaktywne narzędzie MCP (P3-S3). | Architect | rozstrzygnięte |
+| 2 | ~~Stopa referencyjna NBP...~~ Odpowiedź Architekta (`03-design.md`): `api.nbp.pl` nie ma stóp procentowych, ale `static.nbp.pl/dane/stopy/stopy_procentowe.xml` (sprawdzone na żywo) — publiczny plik XML bez klucza i bez ochrony antybotem. | Architect | rozstrzygnięte |
 | 3 | Formuła reżimu i progi alertów (Business rules powyżej) — wartości startowe ASSUMPTION, dokładna kalibracja empiryczna. Kiedy i na jakich danych historycznych kalibrować (przed P3-S1 z grubsza, czy dopiero w P3-S8 backtest)? | Architect | P3-S1 (start) / P3-S8 (kalibracja) |
 | 4 | Kanał alertu (e-mail/webhook/plik) — pytanie ze `01-story.md` #1, wciąż otwarte, potrzebne przed P3-S5, nie blokuje wcześniejszych slice'ów. | Tomasz | przed P3-S5 |
