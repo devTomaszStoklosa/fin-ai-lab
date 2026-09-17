@@ -14,6 +14,7 @@ from fin_ai_lab.core.evals.runner import run_suite
 from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
+from fin_ai_lab.market_pulse.agent import ask
 from fin_ai_lab.market_pulse.brief import build_brief
 from fin_ai_lab.market_pulse.indicators import fetch_indicators
 from fin_ai_lab.market_pulse.regime import classify_regime
@@ -265,6 +266,25 @@ def market_pulse_brief(
         typer.echo(f"Brief written to {output}")
     else:
         typer.echo(text)
+
+
+@market_pulse_app.command("ask")
+def market_pulse_ask(
+    question: str,
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+) -> None:
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(MARKET_PULSE_PROMPTS_DIR)
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+
+    text = asyncio.run(
+        ask(question, llm_client, prompt_registry, model, fred_client, nbp_client)
+    )
+    typer.echo(text)
 
 
 def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:
