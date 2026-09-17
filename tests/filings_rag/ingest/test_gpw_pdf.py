@@ -54,7 +54,9 @@ def test_parse_gpw_report_falls_back_to_page_numbers_without_bookmarks(tmp_path:
     pdf_path = tmp_path / "atrem.pdf"
     pdf_path.write_bytes(_build_minimal_pdf(["Przychody wzrosly.", "Ryzyka dzialalnosci."]))
 
-    chunks = parse_gpw_report(pdf_path, company="Atrem", fiscal_period="FY2025")
+    chunks = parse_gpw_report(
+        pdf_path, company="Atrem", fiscal_period="FY2025", period_type="annual"
+    )
 
     assert [c.section for c in chunks] == ["Strona 1", "Strona 2"]
     assert chunks[0].company == "Atrem"
@@ -70,10 +72,36 @@ def test_parse_gpw_report_skips_blank_pages(tmp_path: Path) -> None:
     pdf_path = tmp_path / "empty.pdf"
     pdf_path.write_bytes(_build_minimal_pdf(["", "Tresc strony drugiej."]))
 
-    chunks = parse_gpw_report(pdf_path, company="Atrem", fiscal_period="FY2025")
+    chunks = parse_gpw_report(
+        pdf_path, company="Atrem", fiscal_period="FY2025", period_type="annual"
+    )
 
     assert len(chunks) == 1
     assert chunks[0].section == "Strona 2"
+
+
+def test_parse_gpw_report_labels_a_half_year_report_correctly(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "atrem_1h.pdf"
+    pdf_path.write_bytes(_build_minimal_pdf(["Wyniki za I polrocze."]))
+
+    chunks = parse_gpw_report(
+        pdf_path, company="Atrem", fiscal_period="FY2026-H1", period_type="half-year"
+    )
+
+    assert chunks[0].filing_type == "half-year-report-pl"
+    assert chunks[0].fiscal_period == "FY2026-H1"
+
+
+def test_parse_gpw_report_labels_a_quarterly_report_correctly(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "atrem_q2.pdf"
+    pdf_path.write_bytes(_build_minimal_pdf(["Wyniki za drugi kwartal."]))
+
+    chunks = parse_gpw_report(
+        pdf_path, company="Atrem", fiscal_period="FY2026-Q2", period_type="quarterly"
+    )
+
+    assert chunks[0].filing_type == "quarterly-report-pl"
+    assert chunks[0].fiscal_period == "FY2026-Q2"
 
 
 class _FakeDestination:
