@@ -1,6 +1,6 @@
 # HANDOFF — fin-ai-lab
 
-Data: 2026-09-14
+Data: 2026-09-17 (sekcja "Stan" i "Stan ticketów" w [ROADMAP.md](docs/ROADMAP.md) zaktualizowane; reszta pliku, w tym "Start następnej sesji", pochodzi z pierwszej sesji 2026-09-14 i częściowo nie jest już aktualna — patrz `docs/ROADMAP.md` dla realnego stanu ticketów).
 Źródło: sesja Claude Code uruchomiona w `C:\Users\Tomasz\Desktop\Repo` (Analizoteka), bez RoleKit. Pamięć Claude z tamtej sesji nie jest widoczna w tym katalogu — wszystko, co potrzebne, jest w tym repo.
 
 ## Kontekst
@@ -13,12 +13,12 @@ Data: 2026-09-14
 
 | Obszar | Stan |
 |---|---|
-| Kod | brak |
-| Git | brak repozytorium — `git init` nie został wykonany |
-| Dokumentacja | README, CLAUDE.md, 7 dokumentów w `docs/`, 6 ADR (Proposed) |
-| Artefakty RoleKit | `lab-foundation`: 01–03 Ready for dev · `p1-portfolio-xray`: 01–02 Ready for architect · `p2`…`p5`: 01 Ready for ba |
-| Konfiguracja | `.claude/rolekit.json` (bramki `null`), `.gitignore`, `.env.example` |
-| Klucze API | żaden nie istnieje na maszynie |
+| Kod | `lab-foundation` i P1 (`portfolio_xray`) gotowe; P2 (`filings_rag`) S1–S5 gotowe, S6/S7 w toku — patrz [ROADMAP.md](docs/ROADMAP.md) „Stan ticketów" |
+| Git | repozytorium istnieje, publiczny remote [devTomaszStoklosa/fin-ai-lab](https://github.com/devTomaszStoklosa/fin-ai-lab), praca przez ticket+branch+PR |
+| Dokumentacja | README, CLAUDE.md, dokumenty w `docs/`, ADR-y, specyfikacje RoleKit per projekt w `docs/specs/` |
+| Artefakty RoleKit | patrz `docs/ROADMAP.md` „Stan ticketów" — bardziej aktualne niż ten wiersz |
+| Konfiguracja | `.claude/rolekit.json`, `.gitignore`, `.env` (nie w repo) |
+| Klucze API | `GEMINI_API_KEY` i `SEC_USER_AGENT` ustawione w `.env` na maszynie właściciela; darmowy tier bez billingu |
 
 ## Decyzje
 
