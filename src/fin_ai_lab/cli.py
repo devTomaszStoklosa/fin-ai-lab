@@ -14,6 +14,11 @@ from fin_ai_lab.core.evals.runner import run_suite
 from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
+from fin_ai_lab.market_pulse.brief import build_brief
+from fin_ai_lab.market_pulse.indicators import fetch_indicators
+from fin_ai_lab.market_pulse.regime import classify_regime
+from fin_ai_lab.market_pulse.sources.fred import FredClient
+from fin_ai_lab.market_pulse.sources.nbp import NbpClient
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
@@ -26,10 +31,13 @@ PORTFOLIO_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
 SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
 REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
 FILINGS_RAG_PROMPTS_DIR = Path("src/fin_ai_lab/filings_rag/prompts")
+MARKET_PULSE_PROMPTS_DIR = Path("src/fin_ai_lab/market_pulse/prompts")
 
 app = typer.Typer()
 portfolio_app = typer.Typer()
 app.add_typer(portfolio_app, name="portfolio")
+market_pulse_app = typer.Typer()
+app.add_typer(market_pulse_app, name="market-pulse")
 
 EVALS_DIR = Path("evals")
 
@@ -56,6 +64,7 @@ def eval_command(
     prompts.load_dir(SECTOR_PROMPTS_DIR)
     prompts.load_dir(REPORT_PROMPTS_DIR)
     prompts.load_dir(FILINGS_RAG_PROMPTS_DIR)
+    prompts.load_dir(MARKET_PULSE_PROMPTS_DIR)
 
     try:
         summary, run_dir = asyncio.run(
@@ -225,6 +234,37 @@ def report_command(
         typer.echo(f"Report written to {output}")
     else:
         typer.echo(report_text)
+
+
+@market_pulse_app.command("brief")
+def market_pulse_brief(
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write the brief to this file instead of stdout."
+    ),
+) -> None:
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(MARKET_PULSE_PROMPTS_DIR)
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+
+    async def run() -> str:
+        indicators, missing_sources = await fetch_indicators(fred_client, nbp_client)
+        regime = classify_regime(indicators)
+        brief = await build_brief(
+            indicators, regime, missing_sources, llm_client, prompt_registry, model
+        )
+        return brief.text
+
+    text = asyncio.run(run())
+    if output is not None:
+        output.write_text(text, encoding="utf-8")
+        typer.echo(f"Brief written to {output}")
+    else:
+        typer.echo(text)
 
 
 def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:

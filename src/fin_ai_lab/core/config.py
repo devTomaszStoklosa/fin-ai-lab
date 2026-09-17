@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str | None = None
     sec_user_agent: str | None = None
+    fred_api_key: str | None = None
     fin_ai_lab_max_run_cost_usd: Decimal = Decimal(0)
 
     def require_gemini_api_key(self) -> str:
@@ -21,3 +22,8 @@ class Settings(BaseSettings):
         if not self.sec_user_agent:
             raise ConfigError("SEC_USER_AGENT")
         return self.sec_user_agent
+
+    def require_fred_api_key(self) -> str:
+        if not self.fred_api_key:
+            raise ConfigError("FRED_API_KEY")
+        return self.fred_api_key
