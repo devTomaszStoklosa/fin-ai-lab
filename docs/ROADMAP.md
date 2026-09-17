@@ -51,7 +51,7 @@ flowchart LR
 - P1-S4 Silnik metryk portfela (czysty Python)
 - P1-S5 Raport opisowy + eval wierności liczb + guardrail „bez rekomendacji" + testy prompt injection
 - P1-S6 Wyciągi PDF przez document input
-- Później: historia transakcji w DuckDB + text-to-SQL
+- Później: historia transakcji w DuckDB + text-to-SQL; funkcja portfela w Analizotece (import XTB/Bossa + ręczne wprowadzanie, prezentacja wizualna) z analizą AI z tego repo jako ważnym elementem — po weryfikacji licencji danych i przeniesieniu wyników, patrz README.md
 
 ### P2 Zapytaj raport
 - P2-S1 Pobranie i parsowanie 10-K (5 spółek) z podziałem na sekcje

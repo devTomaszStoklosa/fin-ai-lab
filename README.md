@@ -2,7 +2,7 @@
 
 Laboratorium nauki AI engineeringu na danych z rynków finansowych: RAG, praca z LLM i prompt engineering, agenci i orkestracja, fine-tuning, ewaluacja.
 
-> Repo do nauki, nie produkt. Wyniki mogą później trafić do Analizoteki (osobne repo, .NET 10 + React 19) — dopiero po weryfikacji licencji danych i wymogów prawnych.
+> Repo do nauki, nie produkt. Wyniki mogą później trafić do Analizoteki (osobne repo, .NET 10 + React 19) — dopiero po weryfikacji licencji danych i wymogów prawnych. Kierunek docelowy: Analizoteka ma dostać funkcję portfela budowanego z importu XTB/Bossa i ręcznego wprowadzania danych, prezentowanego wizualnie, z analizą AI z tego repo jako ważnym elementem.
 
 ## Projekty
 
