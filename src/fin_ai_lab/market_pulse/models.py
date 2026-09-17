@@ -33,6 +33,13 @@ class Brief(BaseModel):
     text: str
 
 
+class NewsItem(BaseModel):
+    title: str
+    summary: str
+    source: str
+    link: str
+
+
 class Alert(BaseModel):
     series_id: str
     previous_value: Decimal
