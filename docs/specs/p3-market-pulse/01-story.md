@@ -1,6 +1,6 @@
 # p3-market-pulse - Market Pulse: agent kondycji rynku
 
-Status: Ready for ba
+Status: Ready for architect
 Owner role: PO
 Upstream: -
 Links: docs/ROADMAP.md, docs/DATA-SOURCES.md
@@ -67,4 +67,4 @@ Should. MVP cut line: P3-S1 do P3-S3 oraz P3-S5. Pozostałe slice'y — Should.
 |---|---|---|---|
 | 1 | Kanał alertu: e-mail, webhook (np. Discord) czy plik? | Tomasz | przed P3-S5 |
 | 2 | Harmonogram: Task Scheduler, GitHub Actions czy Managed Agents? | Tomasz | przed P3-S7 |
-| 3 | Priorytetowe wskaźniki PL (WIG20, EUR/PLN, USD/PLN, stopy NBP)? | Tomasz | przed P3-S1 |
+| 3 | ~~Priorytetowe wskaźniki PL (WIG20, EUR/PLN, USD/PLN, stopy NBP)?~~ Odpowiedź: tak, PL i US razem od P3-S1 — patrz `02-spec.md` REQ-001. WIG20 i stopa referencyjna NBP mają otwarte pytania o dostępność darmowego źródła (`02-spec.md` Open questions #1/#2). | Tomasz | przed P3-S1 — odblokowane |
