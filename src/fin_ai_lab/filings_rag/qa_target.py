@@ -2,12 +2,15 @@ import asyncio
 
 from fin_ai_lab.core.config import Settings
 from fin_ai_lab.core.evals.models import RunContext
+from fin_ai_lab.core.llm.client import LlmClient
 from fin_ai_lab.core.llm.embeddings import GeminiEmbeddingClient
+from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.filings_rag.answer.builder import build_answer
 from fin_ai_lab.filings_rag.index.embeddings import embed_with_cache
 from fin_ai_lab.filings_rag.index.store import VectorStore
 from fin_ai_lab.filings_rag.ingest.sec_edgar import SecEdgarClient
 from fin_ai_lab.filings_rag.models import RetrievalResult
+from fin_ai_lab.filings_rag.retrieval.contextual import contextualize
 from fin_ai_lab.filings_rag.retrieval.hybrid import DEFAULT_TOP_K, retrieve_hybrid
 from fin_ai_lab.filings_rag.retrieval.rerank import rerank
 
@@ -47,7 +50,9 @@ _build_lock = asyncio.Lock()
 _store: VectorStore | None = None
 
 
-async def _get_store() -> VectorStore:
+async def _get_store(
+    llm_client: LlmClient, prompt_registry: PromptRegistry, model: str
+) -> VectorStore:
     global _store
     async with _build_lock:
         if _store is not None:
@@ -61,8 +66,21 @@ async def _get_store() -> VectorStore:
         for company, cik in US_COMPANIES.items():
             all_chunks = await sec_client.ingest_10k(cik, company)
             chunks = [c for c in all_chunks if _SECTION_FILTER in c.section.lower()]
+            if not chunks:
+                continue
+
+            # One LLM call per company (not per chunk) situates every chunk
+            # within the whole "risk factors" section at once (03-design.md
+            # P2-S4) — embedding the context + chunk together, but keeping
+            # chunk.text itself unchanged for citation faithfulness
+            # (answer.verify.verify_citations_faithful matches excerpts
+            # against the raw chunk, not the contextualized version).
+            contexts = await contextualize(chunks, llm_client, prompt_registry, model)
+            contextualized_texts = [
+                f"{contexts.get(chunk.id, '')}\n\n{chunk.text}".strip() for chunk in chunks
+            ]
             vectors = await embed_with_cache(
-                [chunk.text for chunk in chunks],
+                contextualized_texts,
                 model=EMBEDDING_MODEL,
                 embedding_client=embedding_client,
             )
@@ -73,7 +91,7 @@ async def _get_store() -> VectorStore:
 
 
 async def _retrieve_and_rerank(question: str, ctx: RunContext, model: str) -> RetrievalResult:
-    store = await _get_store()
+    store = await _get_store(ctx.llm_client, ctx.prompts, model)
     settings = Settings()
     embedding_client = GeminiEmbeddingClient(settings.require_gemini_api_key())
 
