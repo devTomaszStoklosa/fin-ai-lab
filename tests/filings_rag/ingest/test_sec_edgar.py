@@ -87,6 +87,55 @@ def test_extract_sections_falls_back_to_full_document_without_item_headers() -> 
     assert "No items here" in sections[0][1]
 
 
+# No "Item N." text anywhere — mirrors filers (e.g. Citigroup, #38) that
+# never pair the item number with its title in one text run. A 6-pair
+# cross-reference index (title, page-number) gives an independent title
+# ordering instead; only 3 of its 6 titles recur as bare body headings.
+_TOC_ONLY_HTML = """
+<html><body>
+<div>OVERVIEW</div><div>4</div>
+<div>BUSINESS</div><div>8</div>
+<div>RISK FACTORS</div><div>12</div>
+<div>PROPERTIES</div><div>20</div>
+<div>LEGAL PROCEEDINGS</div><div>25</div>
+<div>OTHER INFORMATION</div><div>30</div>
+<div>BUSINESS</div>
+<p>We sell widgets.</p>
+<div>RISK FACTORS</div>
+<p>Widget demand may decline.</p>
+<div>PROPERTIES</div>
+<p>We lease one office.</p>
+</body></html>
+"""
+
+
+def test_extract_sections_falls_back_to_toc_titles_without_item_headers() -> None:
+    sections = extract_sections(_TOC_ONLY_HTML)
+
+    labels = [label for label, _ in sections]
+    assert labels == ["BUSINESS", "RISK FACTORS", "PROPERTIES"]
+    risk_factors_text = next(text for label, text in sections if label == "RISK FACTORS")
+    assert "Widget demand may decline" in risk_factors_text
+
+
+def test_extract_sections_ignores_a_short_title_page_run() -> None:
+    # Only 2 pairs — well under the 6-pair threshold, so this isn't
+    # mistaken for a real cross-reference index.
+    html = """
+    <html><body>
+    <div>OVERVIEW</div><div>4</div>
+    <div>RISK FACTORS</div><div>12</div>
+    <div>RISK FACTORS</div>
+    <p>Some risk text.</p>
+    </body></html>
+    """
+
+    sections = extract_sections(html)
+
+    assert len(sections) == 1
+    assert sections[0][0] == "Full document"
+
+
 async def test_sec_edgar_client_ingest_10k_produces_chunks_with_citations(tmp_path: Path) -> None:
     def data_handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["User-Agent"] == "fin-ai-lab test test@example.com"
