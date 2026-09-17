@@ -73,3 +73,4 @@ Uzupełniana przy każdym teście importu.
 | `pandas` | 3.0.5 | import + `DataFrame.sum()` | 2026-09-16 | OK |
 | `yfinance` | 1.7.0 | import + `Ticker('AAPL').history()` (żywe pobranie) | 2026-09-16 | OK, ekstra `portfolio` (P1-S4) |
 | `pypdf` | 6.19.0 | import + parsowanie realnego 10-K SEC (extract_text, outline) | 2026-09-16 | OK, czysty Python (bez natywnych rozszerzeń) — ekstra `rag` (P2-S1) |
+| `bm25s` | 0.3.11 | import + `BM25().index()` + `retrieve()` na małym korpusie | 2026-09-17 | OK, bez problemów z AVX2 — ekstra `rag` (P2-S3, hybrid search) |
