@@ -1,3 +1,5 @@
+from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel
@@ -42,3 +44,11 @@ class Answer(BaseModel):
     citations: list[Citation]
     refused: bool
     refusal_reason: RefusalReason | None = None
+
+
+class XbrlObservation(BaseModel):
+    concept: str
+    value: Decimal
+    unit: str
+    fiscal_period: str
+    filed: date
