@@ -23,7 +23,14 @@ portfolio = ["numpy>=2.0", "pandas>=2.2", "yfinance>=0.2.66"]
 # pypdf is pure Python (no native extension) — no AVX2 risk, unlike numpy.
 # numpy already verified on this CPU in P1-S4 (see docs/ENVIRONMENT.md);
 # needed here too for in-memory cosine similarity (03-design.md).
-rag = ["pypdf>=5.0.0", "numpy>=2.0"]
+rag = [
+    "pypdf>=5.0.0",
+    "numpy>=2.0",
+    # bm25s is pure Python (no native extension) — no AVX2 risk. Verified
+    # on this CPU 2026-09-17 (docs/ENVIRONMENT.md). Keyword-match half of
+    # hybrid search (03-design.md P2-S3), alongside the existing embeddings.
+    "bm25s>=0.3.11",
+]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"

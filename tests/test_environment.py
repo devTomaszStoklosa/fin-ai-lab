@@ -38,3 +38,14 @@ def test_pandas_works_on_this_cpu_when_installed() -> None:
     frame = pandas.DataFrame({"a": [1, 2, 3]})
 
     assert frame["a"].sum() == 6
+
+
+def test_bm25s_works_on_this_cpu_when_installed() -> None:
+    bm25s = pytest.importorskip("bm25s")
+
+    corpus = ["the cat sat on the mat", "dogs are great pets", "the mat was red"]
+    retriever = bm25s.BM25()
+    retriever.index(bm25s.tokenize(corpus))
+    results, _scores = retriever.retrieve(bm25s.tokenize(["red mat"]), k=1)
+
+    assert corpus[results[0][0]] == "the mat was red"

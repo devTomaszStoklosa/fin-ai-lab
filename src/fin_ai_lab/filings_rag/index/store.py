@@ -30,6 +30,16 @@ class VectorStore:
         top_indices = np.argsort(-scores)[:top_k]
         return [(self._chunks[i], float(scores[i])) for i in top_indices]
 
+    def score_all(self, query_vector: list[float]) -> list[tuple[Chunk, float]]:
+        """Cosine score for every chunk, unranked — for fusing with another
+        ranking signal (BM25) over the same candidate set (hybrid search,
+        03-design.md P2-S3), rather than committing to a top-k cutoff twice."""
+        if self._vectors is None or not self._chunks:
+            return []
+
+        scores = _cosine_similarity(self._vectors, np.array(query_vector, dtype=float))
+        return list(zip(self._chunks, (float(s) for s in scores), strict=True))
+
     def has_company(self, company: str) -> bool:
         return any(chunk.company == company for chunk in self._chunks)
 
