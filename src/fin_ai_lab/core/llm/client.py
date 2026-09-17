@@ -1,5 +1,6 @@
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol
@@ -26,6 +27,15 @@ class LlmRequest(BaseModel):
     system_instruction: str | None = None
     max_output_tokens: int = 16_000
     response_schema: type[BaseModel] | None = None
+    # Plain Python (sync or async) callables — the SDK's own automatic
+    # function calling (AFC) derives each tool's schema from its signature
+    # and docstring, invokes the ones the model picks, and loops until a
+    # final text answer, all inside this one complete() call (P3-S2,
+    # 03-design.md). Known trade-off, accepted: AFC's returned response
+    # only carries usage_metadata for its last internal turn, so cost_usd
+    # below undercounts whenever the model makes more than one tool call —
+    # not a correctness requirement for this feature (user decision).
+    tools: list[Callable] | None = None
     prompt_id: str | None = None
     prompt_version: int | None = None
 
@@ -76,6 +86,7 @@ class GeminiLlmClient:
                     max_output_tokens=request.max_output_tokens,
                     response_mime_type="application/json" if request.response_schema else None,
                     response_schema=request.response_schema,
+                    tools=request.tools,
                 ),
             )
         except Exception as exc:
