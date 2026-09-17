@@ -55,6 +55,7 @@ Ton dla polskich artykułów GDELT liczy na tłumaczeniu maszynowym, więc sygna
 | PAP Biznes | ochrona Imperva + licencjonowana treść |
 | Dane rynkowe i komunikaty GPW | wymagają płatnej licencji na dane rynkowe |
 | ESPI/EBI przez Bankier | dane dostarcza Notoria — cudza licencja; feed `komunikaty.xml` jest martwy |
+| stooq.pl / stooq.com | ochrona antybotem — nawet endpoint CSV (`/q/d/l/`) wymaga wyzwania JS (proof-of-work, `__verify`) przed wydaniem danych, sprawdzone na żywo 2026-09-17; `core.http` (httpx, bez JS) tego nie przejdzie, zasada 5 wyżej |
 
 ## Nowe źródło — checklista
 
