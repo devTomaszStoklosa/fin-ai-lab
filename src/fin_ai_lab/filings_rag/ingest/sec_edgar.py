@@ -19,6 +19,15 @@ DEFAULT_MIN_INTERVAL_S = 1 / 10
 _ITEM_HEADER_RE = re.compile(r"^\s*item\s+\d+[a-z]?\.\s*.+$", re.IGNORECASE | re.MULTILINE)
 _ITEM_NUMBER_RE = re.compile(r"item\s+(\d+[a-z]?)", re.IGNORECASE)
 
+# Second fallback (see _extract_sections_from_toc below), only tried when
+# _ITEM_HEADER_RE finds nothing anywhere in the document.
+_PAGE_NUMBER_RE = re.compile(r"^\d+$")
+# Below this, a short alternating (title, page-number) run is more likely a
+# coincidence in the prose than a real table-of-contents/cross-reference
+# block — chosen well under the ~20-entry cross-reference index verified
+# for Citigroup's real 10-K (CIK 831001, 2026-09-17, #38), not tuned to it.
+_MIN_TOC_RUN_PAIRS = 6
+
 _BLOCK_TAGS = {"p", "div", "br", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6"}
 _SKIP_TAGS = {"script", "style"}
 
@@ -73,7 +82,7 @@ def extract_sections(html: str) -> list[tuple[str, str]]:
     text = _html_to_text(html)
     matches = list(_ITEM_HEADER_RE.finditer(text))
     if not matches:
-        return [("Full document", text)]
+        return _extract_sections_from_toc(text)
 
     longest_by_number: dict[str, tuple[str, str]] = {}
     for index, match in enumerate(matches):
@@ -94,6 +103,87 @@ def extract_sections(html: str) -> list[tuple[str, str]]:
             longest_by_number[key] = (label, section_text)
 
     return list(longest_by_number.values())
+
+
+def _extract_sections_from_toc(text: str) -> list[tuple[str, str]]:
+    """Second fallback, only reached when no "Item N." header exists
+    anywhere in the document. Some filers (verified for Citigroup, CIK
+    831001, 2026-09-17, #38) never pair an item's number with its title in
+    one text run — the number lives in its own table-of-contents table
+    cell, disconnected from the word "Item" entirely, and the real section
+    heading in the body is a bare title with no number at all. Those
+    filers do include their own cross-reference/table-of-contents block —
+    a run of alternating (title, page-number) paragraphs — so its ALL-CAPS
+    titles, in the order they're listed, give an independent ordering of
+    the document's major sections to split on instead.
+
+    General mechanism (detects the block structurally, doesn't hardcode
+    any filer's or sector's title wording), not guaranteed to apply to
+    every filer — one that has neither "Item N." headers nor this table
+    still falls back to "Full document", same as before this fallback."""
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    toc_titles, toc_end = _find_toc_all_caps_titles(paragraphs)
+    if len(toc_titles) < 2:
+        return [("Full document", text)]
+
+    title_set = set(toc_titles)
+    body_positions = [
+        (index, paragraph)
+        for index, paragraph in enumerate(paragraphs)
+        if index >= toc_end and paragraph.upper() in title_set
+    ]
+    if len(body_positions) < 2:
+        return [("Full document", text)]
+
+    # A title can recur (e.g. a body cross-reference to its own sub-table
+    # of contents, spelled identically) — keep the longest occurrence per
+    # label, same rule the primary "Item N." path uses for the same reason.
+    longest_by_label: dict[str, tuple[str, str]] = {}
+    for position, (para_index, label) in enumerate(body_positions):
+        start = para_index + 1
+        end = (
+            body_positions[position + 1][0]
+            if position + 1 < len(body_positions)
+            else len(paragraphs)
+        )
+        section_text = "\n\n".join(paragraphs[start:end]).strip()
+        if not section_text:
+            continue
+
+        existing = longest_by_label.get(label)
+        if existing is None or len(section_text) > len(existing[1]):
+            longest_by_label[label] = (label, section_text)
+
+    return list(longest_by_label.values()) if longest_by_label else [("Full document", text)]
+
+
+def _find_toc_all_caps_titles(paragraphs: list[str]) -> tuple[list[str], int]:
+    """Finds the longest run of alternating (title, page-number) paragraph
+    pairs and returns its ALL-CAPS titles, in order, plus the paragraph
+    index right after the run ends (so body matches before it — the TOC's
+    own listing — aren't mistaken for the real section content)."""
+    best_run: list[str] = []
+    best_run_end = 0
+    index = 0
+    total = len(paragraphs)
+    while index < total - 1:
+        run: list[str] = []
+        cursor = index
+        while (
+            cursor + 1 < total
+            and not _PAGE_NUMBER_RE.match(paragraphs[cursor])
+            and _PAGE_NUMBER_RE.match(paragraphs[cursor + 1])
+        ):
+            run.append(paragraphs[cursor])
+            cursor += 2
+        if len(run) > len(best_run):
+            best_run, best_run_end = run, cursor
+        index = cursor + 1 if cursor > index else index + 1
+
+    if len(best_run) < _MIN_TOC_RUN_PAIRS:
+        return [], 0
+    all_caps_titles = [p for p in best_run if p.isupper() and any(c.isalpha() for c in p)]
+    return all_caps_titles, best_run_end
 
 
 class _TextExtractor(HTMLParser):
