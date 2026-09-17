@@ -20,6 +20,7 @@ from fin_ai_lab.market_pulse.indicators import fetch_indicators
 from fin_ai_lab.market_pulse.regime import classify_regime
 from fin_ai_lab.market_pulse.sources.fred import FredClient
 from fin_ai_lab.market_pulse.sources.nbp import NbpClient
+from fin_ai_lab.market_pulse.sources.news import fetch_news
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
@@ -253,10 +254,16 @@ def market_pulse_brief(
     nbp_client = NbpClient()
 
     async def run() -> str:
-        indicators, missing_sources = await fetch_indicators(fred_client, nbp_client)
+        (indicators, missing_indicator_sources), (news, missing_news_sources) = (
+            await asyncio.gather(
+                fetch_indicators(fred_client, nbp_client),
+                fetch_news(),
+            )
+        )
+        missing_sources = missing_indicator_sources + missing_news_sources
         regime = classify_regime(indicators)
         brief = await build_brief(
-            indicators, regime, missing_sources, llm_client, prompt_registry, model
+            indicators, regime, missing_sources, news, llm_client, prompt_registry, model
         )
         return brief.text
 
