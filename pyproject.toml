@@ -31,6 +31,10 @@ rag = [
     # hybrid search (03-design.md P2-S3), alongside the existing embeddings.
     "bm25s>=0.3.11",
 ]
+# mcp is pure Python (no native extension). yfinance is duplicated from
+# "portfolio" on purpose: pulse must be installable standalone (P3-S3,
+# WIG20-only-via-MCP tool), without pulling in the rest of portfolio's deps.
+pulse = ["mcp>=1.2.0", "yfinance>=0.2.66"]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"

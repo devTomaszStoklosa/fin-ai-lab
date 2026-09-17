@@ -25,7 +25,7 @@ Werdykty licencyjne dla źródeł wspólnych z Analizoteką pochodzą z jej plan
 | RSS Bankier (`bankier.pl/rss/wiadomosci.xml`, `/gielda.xml`) | nagłówki i leady newsów PL | nie | brak | tak, lokalny korpus | tylko tytuł ≤ 120 i streszczenie ≤ 150 znaków (art. 15 DSM) | P3, P4 |
 | RSS Strefa Inwestorów (`strefainwestorow.pl/rss.xml`) | newsy PL; `description` ≈ cały artykuł | nie | brak | tak, lokalny korpus | jak wyżej — przycinanie krytyczne | P3, P4 |
 | OpenFIGI | ISIN → FIGI, ticker, giełda, typ instrumentu | opcjonalny (wyższe limity) | bez klucza: 25 req/min, 10 zadań/request; z kluczem: 25 req/6s, 100 zadań/request (zweryfikowane 2026-09-16, `api.openfigi.com/api/documentation`) | tak | sprawdź warunki | P1 |
-| yfinance (Yahoo) | historyczne ceny; GPW z sufiksem `.WA` | nie | nieoficjalne, bywa blokowane | **tylko lokalnie** | **nie** | P1, P3, P5 |
+| yfinance (Yahoo) | historyczne ceny; GPW z sufiksem `.WA`. WIG20 = ticker `WIG20.WA` (zweryfikowane na żywo 2026-09-17), wyłącznie przez narzędzie MCP P3-S3, nigdy w automatycznym briefie | nie | nieoficjalne, bywa blokowane | **tylko lokalnie** | **nie** | P1, P3, P5 |
 | KRS / eKRS | roczne sprawozdania finansowe spółek PL (z opóźnieniem) | nie | brak | tak | tak (informacja publiczna) | P2 (opcjonalnie) |
 | Raporty okresowe spółek GPW (PDF z relacji inwestorskich) | sprawozdania PL | nie | pobieranie ręczne, kilka plików | tak | sprawdź licencję | P2 |
 | FinanceBench (Patronus AI) | otwarta próbka ok. 150 pytań do raportów spółek US | nie | — | tak | sprawdź licencję | P2 |
