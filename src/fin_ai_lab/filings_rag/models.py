@@ -4,7 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-FilingType = Literal["10-K", "annual-report-pl"]
+FilingType = Literal[
+    "10-K", "annual-report-pl", "half-year-report-pl", "quarterly-report-pl"
+]
 Language = Literal["en", "pl"]
 RefusalReason = Literal["no_relevant_chunk", "company_not_in_corpus"]
 
