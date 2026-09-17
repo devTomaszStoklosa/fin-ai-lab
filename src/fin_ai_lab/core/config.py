@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     sec_user_agent: str | None = None
     fred_api_key: str | None = None
+    ntfy_topic: str | None = None
     fin_ai_lab_max_run_cost_usd: Decimal = Decimal(0)
 
     def require_gemini_api_key(self) -> str:
@@ -27,3 +28,8 @@ class Settings(BaseSettings):
         if not self.fred_api_key:
             raise ConfigError("FRED_API_KEY")
         return self.fred_api_key
+
+    def require_ntfy_topic(self) -> str:
+        if not self.ntfy_topic:
+            raise ConfigError("NTFY_TOPIC")
+        return self.ntfy_topic
