@@ -15,12 +15,15 @@ from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.market_pulse.agent import ask
+from fin_ai_lab.market_pulse.alerts import check_alerts
 from fin_ai_lab.market_pulse.brief import build_brief
 from fin_ai_lab.market_pulse.indicators import fetch_indicators
+from fin_ai_lab.market_pulse.notifications.ntfy import send_alerts
 from fin_ai_lab.market_pulse.regime import classify_regime
 from fin_ai_lab.market_pulse.sources.fred import FredClient
 from fin_ai_lab.market_pulse.sources.nbp import NbpClient
 from fin_ai_lab.market_pulse.sources.news import fetch_news
+from fin_ai_lab.market_pulse.state import changes_since_previous, load_previous, save_current
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
@@ -261,10 +264,18 @@ def market_pulse_brief(
             )
         )
         missing_sources = missing_indicator_sources + missing_news_sources
+        previous_indicators = load_previous()
+        indicators = changes_since_previous(indicators, previous_indicators)
         regime = classify_regime(indicators)
         brief = await build_brief(
             indicators, regime, missing_sources, news, llm_client, prompt_registry, model
         )
+
+        alerts = check_alerts(indicators)
+        if alerts:
+            await send_alerts(alerts, settings.require_ntfy_topic())
+
+        save_current(indicators)
         return brief.text
 
     text = asyncio.run(run())
