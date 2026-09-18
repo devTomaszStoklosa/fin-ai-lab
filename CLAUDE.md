@@ -70,6 +70,7 @@ Intel i5-2500K **bez AVX2**, 8 GB RAM, **bez GPU NVIDIA**, Windows 10. Część 
 | układem repo, modułami core, kontraktami | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | evalami, zbiorami, graderami | [docs/EVALS.md](docs/EVALS.md) |
 | wywołaniami Gemini, kosztami | [docs/LLM-API.md](docs/LLM-API.md) |
+| wywołaniami Groq (drugi provider), kosztami | [docs/LLM-API-GROQ.md](docs/LLM-API-GROQ.md) |
 | nowym źródłem danych | [docs/DATA-SOURCES.md](docs/DATA-SOURCES.md) |
 | decyzjami | [docs/adr/](docs/adr/) |
 | konkretnym projektem | `docs/specs/<ticket>/` |

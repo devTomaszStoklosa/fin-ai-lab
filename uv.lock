@@ -442,6 +442,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+groq = [
+    { name = "groq" },
+]
 ml = [
     { name = "numpy" },
     { name = "scikit-learn" },
@@ -472,6 +475,7 @@ dev = [
 requires-dist = [
     { name = "bm25s", marker = "extra == 'rag'", specifier = ">=0.3.11" },
     { name = "google-genai", specifier = ">=2.23.0" },
+    { name = "groq", marker = "extra == 'groq'", specifier = ">=1.7.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", marker = "extra == 'pulse'", specifier = ">=1.2.0" },
     { name = "numpy", marker = "extra == 'ml'", specifier = ">=2.0" },
@@ -487,7 +491,7 @@ requires-dist = [
     { name = "yfinance", marker = "extra == 'portfolio'", specifier = ">=0.2.66" },
     { name = "yfinance", marker = "extra == 'pulse'", specifier = ">=0.2.66" },
 ]
-provides-extras = ["portfolio", "rag", "pulse", "ml"]
+provides-extras = ["portfolio", "rag", "pulse", "ml", "groq"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -533,6 +537,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ae/9a/db14adffb0144584889e05f433a4e8ce540f9ed2928ed8b23cc65ab96178/google_genai-2.23.0.tar.gz", hash = "sha256:1ceebffdcd2af30c039a922ba05de61cd4054bb61c94be7649c4bf9ff8b33c5f", size = 686707, upload-time = "2026-09-10T22:55:31.12Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/b0/f6bc58a6a7c8ad7ad2b6a36b0bf4732b3504dd7d48c6674f848304548869/google_genai-2.23.0-py3-none-any.whl", hash = "sha256:1e63211d44d188b8069c2b354d92b9bde25c1e821513fdbe1948b7c0d9f6b922", size = 1093785, upload-time = "2026-09-10T22:55:29.282Z" },
+]
+
+[[package]]
+name = "groq"
+version = "1.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0c/c1/20cb719bc21aa22df185c4aa60abc17680d7067d41fe0ca3fda98b75822b/groq-1.7.0.tar.gz", hash = "sha256:d582dbb3f071b92ca339baba83af9f57ba6f46a51c34b04565d7cb9badb2785b", size = 158918, upload-time = "2026-08-26T02:36:19.734Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/f6/c3d8ea3194d7d7d8292edd4dbb4b6832d29c2eab04887dda4a742e83902c/groq-1.7.0-py3-none-any.whl", hash = "sha256:cb1518f823423d4e52445859eb7d2918a927794cec12f8d5e50d9161e3690fc8", size = 143797, upload-time = "2026-08-26T02:36:18.497Z" },
 ]
 
 [[package]]
