@@ -49,3 +49,16 @@ def test_bm25s_works_on_this_cpu_when_installed() -> None:
     results, _scores = retriever.retrieve(bm25s.tokenize(["red mat"]), k=1)
 
     assert corpus[results[0][0]] == "the mat was red"
+
+
+def test_scikit_learn_works_on_this_cpu_when_installed() -> None:
+    # "ml" extra (P4-S3 baselines) — verified live on this CPU (no AVX2)
+    # 2026-09-18 before building anything on it (03-design.md risk).
+    pytest.importorskip("sklearn")
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+
+    features = TfidfVectorizer().fit_transform(["dobry wynik finansowy", "zly wynik finansowy"])
+    model = LogisticRegression().fit(features, ["positive", "negative"])
+
+    assert list(model.predict(features)) == ["positive", "negative"]
