@@ -21,7 +21,14 @@ async def label_with_teacher(
     headlines to pass in, so a repeated run never re-pays for an already
     labeled headline."""
     to_label = headlines if max_calls is None else headlines[:max_calls]
-    prompt = prompt_registry.get("teacher", 1)
+    # v2 (not an in-place edit to v1 — ADR 0004's versioned prompts exist
+    # for exactly this): v1 said "the closed list in your output schema",
+    # which only holds for providers that actually pass the schema to the
+    # model (Gemini's response_schema does; Groq's response_format=
+    # json_object doesn't — confirmed live, ~30% of Groq-teacher labels
+    # came back with an event_type outside the enum). v2 spells the list
+    # out in the prompt text itself, which every provider sees regardless.
+    prompt = prompt_registry.get("teacher", 2)
     catalog_json = json.dumps(TICKER_CATALOG, ensure_ascii=False)
 
     labeled: list[LabeledHeadline] = []
@@ -37,7 +44,7 @@ async def label_with_teacher(
             messages=[{"role": "user", "text": rendered}],
             response_schema=Label,
             prompt_id="teacher",
-            prompt_version=1,
+            prompt_version=2,
         )
         try:
             result = await llm_client.complete(request)
