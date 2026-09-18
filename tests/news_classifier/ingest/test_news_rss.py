@@ -57,8 +57,15 @@ async def test_collect_headlines_skips_a_failed_feed_not_the_whole_collection(mo
         return httpx.Response(200, content=STREFA_XML)
 
     _patch_transport(monkeypatch, httpx.MockTransport(handler))
+    # Explicit two-feed subset, not the module-level NEWS_FEEDS — this test
+    # is about one-feed-fails-the-rest-survive behavior, not the current
+    # feed count, so it shouldn't need updating every time a feed is added.
+    feeds = {
+        "bankier": "https://www.bankier.pl/rss/gielda.xml",
+        "strefa-inwestorow": "https://strefainwestorow.pl/rss.xml",
+    }
 
-    headlines = await collect_headlines()
+    headlines = await collect_headlines(feeds)
 
     assert len(headlines) == 1
     assert headlines[0].source == "strefa-inwestorow"
