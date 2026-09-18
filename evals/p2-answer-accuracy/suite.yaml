@@ -5,5 +5,9 @@ model: gemini-3.6-flash
 graders:
   - type: exact
     field: refused
+  - type: exact
+    field: refusal_reason
+  - type: exact
+    field: has_citations
 repeats: 1
 concurrency: 1
