@@ -8,6 +8,7 @@ data/private/
 data/raw/
 data/cache/
 data/state/
+data/briefs/
 
 # Model artifacts
 models/
