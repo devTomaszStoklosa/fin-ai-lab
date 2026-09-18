@@ -1,6 +1,6 @@
 # p5-investment-committee - Komitet inwestycyjny: wielu agentów nad portfelem
 
-Status: Ready for ba
+Status: Ready for architect
 Owner role: PO
 Upstream: -
 Links: docs/ROADMAP.md, docs/adr/0006-descriptive-reports-no-investment-advice.md
