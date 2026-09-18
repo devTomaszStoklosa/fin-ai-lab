@@ -9,6 +9,7 @@ data/raw/
 data/cache/
 data/state/
 data/briefs/
+data/corpus/
 
 # Model artifacts
 models/
