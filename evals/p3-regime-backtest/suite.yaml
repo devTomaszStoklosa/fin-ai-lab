@@ -1,0 +1,8 @@
+name: p3-regime-backtest
+dataset_version: 1
+target: fin_ai_lab.market_pulse.qa_target:regime_backtest_target
+graders:
+  - type: exact
+    field: regime
+repeats: 1
+concurrency: 4

@@ -1,0 +1,45 @@
+{
+  "suite": "p3-regime-backtest",
+  "dataset_version": 1,
+  "started_at": "2026-09-18T08:01:52.034423Z",
+  "finished_at": "2026-09-18T08:01:52.034423Z",
+  "incomplete": false,
+  "model": null,
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "1505169",
+  "cost_usd": "0",
+  "case_count": 4,
+  "cache_hits": 0,
+  "latency_p50_ms": 0.0,
+  "latency_p95_ms": 0.0,
+  "metrics": {
+    "grader:exact": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 4.0
+    },
+    "tag:vix-spike": {
+      "pass_rate": 1.0,
+      "n": 1.0
+    },
+    "tag:calm": {
+      "pass_rate": 1.0,
+      "n": 1.0
+    },
+    "tag:inverted-curve": {
+      "pass_rate": 1.0,
+      "n": 2.0
+    },
+    "tag:edge-case": {
+      "pass_rate": 1.0,
+      "n": 1.0
+    }
+  },
+  "cases": {
+    "covid-crash-2020-03-16": true,
+    "calm-2017-06-01": true,
+    "inverted-curve-calm-vix-2024-06-03": true,
+    "inverted-curve-2023-07-03": true
+  }
+}

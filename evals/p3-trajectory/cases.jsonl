@@ -1,0 +1,3 @@
+{"id": "us-10y-yield", "split": "dev", "input": {"question": "Jaka jest rentowność 10-letnich obligacji USA?"}, "expected": {"tool_calls": ["get_fred_series_value"]}, "tags": ["single-tool"], "provenance": "synthetic"}
+{"id": "eur-pln-rate", "split": "dev", "input": {"question": "Jaki jest aktualny kurs EUR/PLN?"}, "expected": {"tool_calls": ["get_nbp_fx_rate"]}, "tags": ["single-tool"], "provenance": "synthetic"}
+{"id": "nbp-reference-rate", "split": "dev", "input": {"question": "Jaka jest aktualna stopa referencyjna NBP?"}, "expected": {"tool_calls": ["get_nbp_reference_rate"]}, "tags": ["single-tool"], "provenance": "synthetic"}
