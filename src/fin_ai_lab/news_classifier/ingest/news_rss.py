@@ -11,14 +11,17 @@ from fin_ai_lab.news_classifier.models import Headline
 # 02-spec.md REQ-004: lead kept, full article body never stored.
 LEAD_MAX_CHARS = 150
 
-# Same feeds as market_pulse/sources/news.py, different purpose: this
-# collects for the training/eval corpus, not a daily brief, so there is no
-# per-run item cap — RSS itself has no deep history, so repeated collection
-# runs over time (not one big pull) is what actually builds the corpus
-# (01-story.md's 150-300 headlines/day volume).
+# Wider than market_pulse/sources/news.py on purpose (docs/DATA-SOURCES.md):
+# this collects for the training/eval corpus, not a daily brief, so more
+# sources means a bigger corpus faster, not a longer daily read. RSS itself
+# has no deep history, so repeated collection runs over time (not one big
+# pull) is what actually builds the corpus (01-story.md's 150-300
+# headlines/day volume).
 NEWS_FEEDS: dict[str, str] = {
     "bankier": "https://www.bankier.pl/rss/gielda.xml",
+    "bankier-wiadomosci": "https://www.bankier.pl/rss/wiadomosci.xml",
     "strefa-inwestorow": "https://strefainwestorow.pl/rss.xml",
+    "comparic": "https://comparic.pl/feed/",
 }
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
