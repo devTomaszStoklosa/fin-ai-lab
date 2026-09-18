@@ -89,4 +89,29 @@ PRICES: dict[str, ModelPrice] = {
             ),
         ]
     ),
+    # Groq second provider (ADR 0007). Prices are the paid-tier rate, used
+    # only as the zero-cost fail-safe's tripwire (rule 9) — the same role
+    # Gemini's real pricing plays here, since our Groq key also has no
+    # billing attached. llama-3.3-70b-versatile was deprecated from Groq's
+    # free tier 2026-06-17 (moved enterprise-only 2026-08-26); gpt-oss is
+    # the current free-tier tool-use model — verify against
+    # console.groq.com/docs/models before relying on this price snapshot.
+    "openai/gpt-oss-120b": ModelPrice(
+        tiers=[
+            PriceTier(
+                up_to_input_tokens=None,
+                input_price_per_million=Decimal("0.15"),
+                output_price_per_million=Decimal("0.60"),
+            ),
+        ]
+    ),
+    "openai/gpt-oss-20b": ModelPrice(
+        tiers=[
+            PriceTier(
+                up_to_input_tokens=None,
+                input_price_per_million=Decimal("0.075"),
+                output_price_per_million=Decimal("0.30"),
+            ),
+        ]
+    ),
 }

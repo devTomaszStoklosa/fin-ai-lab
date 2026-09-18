@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     gemini_api_key: str | None = None
+    groq_api_key: str | None = None
     sec_user_agent: str | None = None
     fred_api_key: str | None = None
     ntfy_topic: str | None = None
@@ -18,6 +19,11 @@ class Settings(BaseSettings):
         if not self.gemini_api_key:
             raise ConfigError("GEMINI_API_KEY")
         return self.gemini_api_key
+
+    def require_groq_api_key(self) -> str:
+        if not self.groq_api_key:
+            raise ConfigError("GROQ_API_KEY")
+        return self.groq_api_key
 
     def require_sec_user_agent(self) -> str:
         if not self.sec_user_agent:

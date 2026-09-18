@@ -39,6 +39,10 @@ pulse = ["mcp>=1.2.0", "yfinance>=0.2.66"]
 # (docs/ENVIRONMENT.md, 03-design.md P4-S3 risk), don't assume it just
 # works like numpy/pandas/bm25s/yfinance did.
 ml = ["numpy>=2.0", "scikit-learn>=1.5"]
+# Groq second LLM provider (ADR 0007) — pure-Python HTTP client (OpenAI-
+# compatible REST), no native extension, no AVX2 risk (same reasoning as
+# "mcp" above).
+groq = ["groq>=1.7.0"]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"
