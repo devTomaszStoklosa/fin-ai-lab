@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 from fin_ai_lab.core.config import Settings
 from fin_ai_lab.core.evals.models import RunContext
@@ -8,6 +9,7 @@ from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.filings_rag.answer.builder import build_answer
 from fin_ai_lab.filings_rag.index.embeddings import embed_with_cache
 from fin_ai_lab.filings_rag.index.store import VectorStore
+from fin_ai_lab.filings_rag.ingest.gpw_pdf import parse_gpw_report
 from fin_ai_lab.filings_rag.ingest.sec_edgar import SecEdgarClient
 from fin_ai_lab.filings_rag.models import RetrievalResult
 from fin_ai_lab.filings_rag.retrieval.contextual import contextualize
@@ -30,6 +32,22 @@ US_COMPANIES = {
     "Citigroup": "831001",
     "NextEra Energy": "753308",
 }
+
+# GPW half-year reports (data/private/gpw/, gitignored real broker/IR
+# downloads — 01-story.md resolved corpus, P2-S7). One narrative file per
+# company: the others in each folder are audit opinions/financial
+# statements without prose to retrieve. Chosen by inspecting real page
+# counts/content, not guessed. No _SECTION_FILTER applies to these (Polish
+# reports have no "Item 1A Risk Factors" equivalent) — the whole narrative
+# report is indexed.
+GPW_COMPANIES: dict[str, Path] = {
+    "Atrem": Path("data/private/gpw/Atrem/Atrem 1H2026 Sprawozdanie zarządu.pdf"),
+    "ING Bank Śląski": Path(
+        "data/private/gpw/ING/Sprawozdanie_Zarzadu_z_dzialalnosci_Grupy_ING_Bank_Slaski_SA_Ipol_2026_PL.pdf"
+    ),
+    "PKN Orlen": Path("data/private/gpw/Orlen/ORLEN_260806_2026półrocze - RAPORT IH2026.pdf"),
+}
+GPW_FISCAL_PERIOD = "1H2026"
 
 # ASSUMPTION for this golden set (revisit for a real "index everything"
 # command, not built yet): only Risk Factors, not the full 10-K. The free
@@ -86,6 +104,30 @@ async def _get_store(
             )
             store.add(chunks, vectors)
 
+        for company, pdf_path in GPW_COMPANIES.items():
+            if not pdf_path.exists():
+                # data/private/gpw/ is gitignored — a real broker/IR
+                # download the owner has locally, not something every
+                # machine running this eval necessarily has.
+                continue
+
+            chunks = parse_gpw_report(
+                pdf_path, company=company, fiscal_period=GPW_FISCAL_PERIOD, period_type="half-year"
+            )
+            if not chunks:
+                continue
+
+            contexts = await contextualize(chunks, llm_client, prompt_registry, model)
+            contextualized_texts = [
+                f"{contexts.get(chunk.id, '')}\n\n{chunk.text}".strip() for chunk in chunks
+            ]
+            vectors = await embed_with_cache(
+                contextualized_texts,
+                model=EMBEDDING_MODEL,
+                embedding_client=embedding_client,
+            )
+            store.add(chunks, vectors)
+
         _store = store
         return store
 
@@ -100,7 +142,7 @@ async def _retrieve_and_rerank(question: str, ctx: RunContext, model: str) -> Re
         store,
         embedding_client=embedding_client,
         embedding_model=EMBEDDING_MODEL,
-        known_companies=list(US_COMPANIES),
+        known_companies=list(US_COMPANIES) + list(GPW_COMPANIES),
         top_k=RERANK_CANDIDATE_POOL,
     )
     reranked = await rerank(question, hybrid_result.chunks, ctx.llm_client, ctx.prompts, model)
