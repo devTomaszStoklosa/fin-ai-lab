@@ -1,6 +1,5 @@
 import json
 
-from fin_ai_lab.core.errors import ResponseValidationError
 from fin_ai_lab.core.llm.client import LlmClient, LlmRequest
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.news_classifier.models import Headline, Label, LabeledHeadline
@@ -42,10 +41,14 @@ async def label_with_teacher(
         )
         try:
             result = await llm_client.complete(request)
-        except ResponseValidationError as exc:
+        except Exception as exc:
             # REQ-012: a malformed generative result is a recorded error,
-            # never a partial or guessed label.
-            errors.append(f"{headline.headline}: {exc}")
+            # never a partial or guessed label — and the same goes for a
+            # transient API failure (e.g. a 503 mid-run, seen live):
+            # one bad headline must not lose every label already earned
+            # in this run, so this catches broadly, not just schema
+            # mismatches, and keeps the loop going.
+            errors.append(f"{headline.headline}: {type(exc).__name__}: {exc}")
             continue
 
         label = result.parsed
