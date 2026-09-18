@@ -13,6 +13,7 @@ from fin_ai_lab.core.errors import BudgetExceeded, SuiteError
 from fin_ai_lab.core.evals.runner import run_suite
 from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
+from fin_ai_lab.core.llm.groq_client import GroqLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.investment_committee.budget import BudgetGuard
 from fin_ai_lab.investment_committee.single_agent import run_single_agent
@@ -327,10 +328,16 @@ def market_pulse_ask(
 @news_classifier_app.command("label")
 def news_classifier_label(
     max_calls: int = typer.Option(15, "--max-calls", help="Teacher calls to spend this run."),
-    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    model: str = typer.Option("openai/gpt-oss-120b", "--model"),
+    provider: str = typer.Option(
+        "groq",
+        "--provider",
+        help="'groq' (default, ADR 0007 — this task needs the most calls of any"
+        " project) or 'gemini' (pass --model gemini-3.6-flash to match).",
+    ),
 ) -> None:
     settings = Settings()
-    llm_client = _build_llm_client(settings)
+    llm_client = _build_llm_client(settings, provider)
     prompt_registry = PromptRegistry()
     prompt_registry.load_dir(NEWS_CLASSIFIER_PROMPTS_DIR)
 
@@ -433,7 +440,14 @@ def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bo
     return typer.confirm("Save this configuration and continue?")
 
 
-def _build_llm_client(settings: Settings) -> LlmClient:
+def _build_llm_client(settings: Settings, provider: str = "gemini") -> LlmClient:
+    # P4 teacher labeling needs far more calls than any other project's
+    # LLM use (one call per headline, hundreds of them, vs. a handful per
+    # run elsewhere) — the reason it's the one command below that defaults
+    # to "groq" instead of "gemini" (ADR 0007). Corpus was empty when this
+    # was decided, so there's no teacher-consistency risk from mixing.
+    if provider == "groq" and settings.groq_api_key:
+        return GroqLlmClient(api_key=settings.groq_api_key)
     if settings.gemini_api_key:
         return GeminiLlmClient(api_key=settings.gemini_api_key)
     return FakeLlmClient({})
