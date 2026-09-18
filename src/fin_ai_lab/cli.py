@@ -14,6 +14,8 @@ from fin_ai_lab.core.evals.runner import run_suite
 from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
+from fin_ai_lab.investment_committee.budget import BudgetGuard
+from fin_ai_lab.investment_committee.single_agent import run_single_agent
 from fin_ai_lab.market_pulse.agent import ask
 from fin_ai_lab.market_pulse.alerts import check_alerts
 from fin_ai_lab.market_pulse.brief import build_brief
@@ -33,7 +35,7 @@ from fin_ai_lab.news_classifier.labeling.progress import (
     unlabeled,
 )
 from fin_ai_lab.news_classifier.labeling.teacher import label_with_teacher
-from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
+from fin_ai_lab.portfolio_xray.canonical import AccountType, Portfolio, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
@@ -47,6 +49,7 @@ REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
 FILINGS_RAG_PROMPTS_DIR = Path("src/fin_ai_lab/filings_rag/prompts")
 MARKET_PULSE_PROMPTS_DIR = Path("src/fin_ai_lab/market_pulse/prompts")
 NEWS_CLASSIFIER_PROMPTS_DIR = Path("src/fin_ai_lab/news_classifier/prompts")
+INVESTMENT_COMMITTEE_PROMPTS_DIR = Path("src/fin_ai_lab/investment_committee/prompts")
 
 app = typer.Typer()
 portfolio_app = typer.Typer()
@@ -55,6 +58,8 @@ market_pulse_app = typer.Typer()
 app.add_typer(market_pulse_app, name="market-pulse")
 news_classifier_app = typer.Typer()
 app.add_typer(news_classifier_app, name="news-classifier")
+investment_committee_app = typer.Typer()
+app.add_typer(investment_committee_app, name="investment-committee")
 
 EVALS_DIR = Path("evals")
 
@@ -83,6 +88,7 @@ def eval_command(
     prompts.load_dir(FILINGS_RAG_PROMPTS_DIR)
     prompts.load_dir(MARKET_PULSE_PROMPTS_DIR)
     prompts.load_dir(NEWS_CLASSIFIER_PROMPTS_DIR)
+    prompts.load_dir(INVESTMENT_COMMITTEE_PROMPTS_DIR)
 
     try:
         summary, run_dir = asyncio.run(
@@ -346,6 +352,72 @@ def news_classifier_label(
     typer.echo(f"Labeled {labeled_count} headlines, {len(errors)} errors")
     for error in errors:
         typer.echo(f"  error: {error}", err=True)
+
+
+@investment_committee_app.command("analyze")
+def investment_committee_analyze(
+    file: Path,
+    valuation_date: str = typer.Option(..., "--valuation-date", help="YYYY-MM-DD"),
+    account_type: str = typer.Option("regular", "--account-type"),
+    market_currency: str = typer.Option("PLN", "--market-currency"),
+    broker: str | None = typer.Option(
+        None, "--broker", help="Required only if the file's format is not yet recognized."
+    ),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    budget_usd: str = typer.Option("1.00", "--budget-usd"),
+    max_iterations: int = typer.Option(10, "--max-iterations"),
+    yes: bool = typer.Option(
+        False, "--yes", help="Accept a newly proposed parser config without asking."
+    ),
+) -> None:
+    if account_type not in get_args(AccountType):
+        typer.echo(f"Invalid account type '{account_type}'", err=True)
+        raise typer.Exit(code=1)
+
+    parsed_date = datetime.strptime(valuation_date, "%Y-%m-%d").date()
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(INVESTMENT_COMMITTEE_PROMPTS_DIR)
+    registry = ParserRegistry()
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+    budget = BudgetGuard(budget_usd=Decimal(budget_usd), max_iterations=max_iterations)
+
+    def approve(config: ParserConfig, positions: list[Position]) -> bool:
+        return _confirm_new_config(config, positions, yes)
+
+    async def run() -> str:
+        result = await import_file(
+            file.read_bytes(),
+            valuation_date=parsed_date,
+            account_type=account_type,
+            market_currency=market_currency,
+            registry=registry,
+            broker_hint=broker,
+            llm_client=llm_client,
+            prompt_registry=prompt_registry,
+            model=model,
+            on_new_config_proposed=approve,
+        )
+        if result.errors:
+            raise ReportGenerationError("; ".join(result.errors))
+
+        portfolio = Portfolio(positions=result.positions, valuation_date=parsed_date)
+        report = await run_single_agent(
+            portfolio, str(file), fred_client, nbp_client,
+            llm_client, prompt_registry, model, budget,
+        )
+        return report.text
+
+    try:
+        text = asyncio.run(run())
+    except ReportGenerationError as exc:
+        typer.echo(f"Aborted: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(text)
 
 
 def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:
