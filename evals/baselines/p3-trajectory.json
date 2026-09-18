@@ -1,0 +1,32 @@
+{
+  "suite": "p3-trajectory",
+  "dataset_version": 1,
+  "started_at": "2026-09-18T08:19:08.529539Z",
+  "finished_at": "2026-09-18T08:19:20.909602Z",
+  "incomplete": false,
+  "model": null,
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "b11c5c2",
+  "cost_usd": "0.00192450",
+  "case_count": 3,
+  "cache_hits": 0,
+  "latency_p50_ms": 3640.0,
+  "latency_p95_ms": 5313.999999999999,
+  "metrics": {
+    "grader:set_f1": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 3.0
+    },
+    "tag:single-tool": {
+      "pass_rate": 1.0,
+      "n": 3.0
+    }
+  },
+  "cases": {
+    "us-10y-yield": true,
+    "eur-pln-rate": true,
+    "nbp-reference-rate": true
+  }
+}
