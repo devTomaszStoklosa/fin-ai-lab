@@ -114,6 +114,6 @@ Zero limitu wydatków do ustawienia — klucz zostaje bez billingu. Throttling p
 | lab-foundation | Ready for dev | Ready for dev | Ready for dev | gotowe (F-1..F-4) |
 | p1-portfolio-xray | Ready for architect | Ready for architect | Ready for dev | gotowe (P1-S1..S6, evale zielone) |
 | p2-filings-rag | Ready for architect | Ready for architect | Ready for dev | P2-S1..S5 gotowe; S6 (cytaty/odmowy — eval) i S7 (GPW w golden set, pytania PL) w toku |
-| p3-market-pulse | Ready for architect | Ready for architect | Ready for dev | P3-S1..S5 gotowe; S6 (tracing/koszt) spełnione bez nowego kodu; S7 (harmonogram — Task Scheduler) skrypty gotowe w `scripts/`, rejestracja zadania czeka na uruchomienie przez Tomasza na jego maszynie; S8 (evale/backtest) do zrobienia |
+| p3-market-pulse | Ready for architect | Ready for architect | Ready for dev | gotowe (P3-S1..S8). `p3-regime-backtest` zielony (4/4, baseline zapisany); `p3-trajectory` gotowy, nieuruchomiony na żywo (czeka na limit Gemini). Harmonogram (S7): skrypty w `scripts/`, rejestracja zadania na maszynie Tomasza czeka na jego uruchomienie |
 | p4-news-classifier | Ready for ba | — | — | — |
 | p5-investment-committee | Ready for ba | — | — | — |
