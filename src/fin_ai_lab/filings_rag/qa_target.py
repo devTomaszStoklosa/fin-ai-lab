@@ -137,4 +137,5 @@ async def answer_target(case_input: dict, ctx: RunContext) -> dict:
         "refused": answer.refused,
         "refusal_reason": answer.refusal_reason,
         "citation_count": len(answer.citations),
+        "has_citations": bool(answer.citations),
     }
