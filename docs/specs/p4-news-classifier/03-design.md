@@ -33,7 +33,7 @@ ADRs touched: [0001](../../adr/0001-python-uv-single-package.md) (jeden pakiet, 
 ```mermaid
 flowchart LR
   RSS[RSS Bankier/Strefa Inwestorów] --> CORPUS[corpus.collect — S1]
-  CORPUS --> TEACHER[teacher.label — Gemini Batch API, S2]
+  CORPUS --> TEACHER[teacher.label — pojedyncze wywołania w dziennym limicie, S2]
   TEACHER --> REVIEW[human review — kappa, S2]
   REVIEW --> SPLIT[split.chronological — S1, no leakage]
   SPLIT --> BASE[baselines — S3: majority / TF-IDF+LR / few-shot LLM]
@@ -59,7 +59,7 @@ src/fin_ai_lab/news_classifier/
   ingest/
     news_rss.py                     # reuse wzorca market_pulse/sources/news.py — inny cel (korpus, nie brief)
   labeling/
-    teacher.py                      # Gemini Batch API, response_schema=Label (S2)
+    teacher.py                      # pojedyncze wywołania, response_schema=Label, max_calls per run (S2)
     calibration.py                  # kappa Cohena teacher vs. człowiek (S2)
   split.py                          # split chronologiczny + dedup near-duplicate (S1, REQ-005)
   baselines/
@@ -105,8 +105,9 @@ class LabeledHeadline(BaseModel):
 async def collect_headlines(feeds: dict[str, str]) -> list[Headline]: ...        # S1, reuse news.py pattern
 
 async def label_with_teacher(
-    headlines: list[Headline], llm_client: LlmClient, prompt_registry: PromptRegistry, model: str
-) -> list[LabeledHeadline]: ...                                                   # S2, Batch API
+    headlines: list[Headline], llm_client: LlmClient, prompt_registry: PromptRegistry, model: str,
+    *, max_calls: int,
+) -> list[LabeledHeadline]: ...                        # S2, single calls, daily-limit-bounded per run
 
 def cohens_kappa(teacher_labels: list[Label], human_labels: list[Label]) -> float: ...  # S2, REQ-011
 
@@ -129,14 +130,16 @@ Kontrakt: `TICKER_CATALOG: dict[str, str]` (ticker → nazwa spółki), moduł c
 
 `scikit-learn` nie był jeszcze zweryfikowany na tej maszynie (i5-2500K, bez AVX2 — docs/ENVIRONMENT.md). Przed budową na nim architektury: test importu (`tests/test_environment.py` wzorem `numpy`/`bm25s`/`yfinance`), i jeśli padnie — sprawdzić dystrybucję bez AVX2 (analogicznie do `polars-lts-cpu` dla `polars`) zanim się na nim oprze S3.
 
-### `labeling/teacher.py` — Batch API, nie pojedyncze wywołania
+### `labeling/teacher.py` — pojedyncze wywołania w dziennym limicie, nie Batch API
 
-02-spec.md REQ-010 wymaga structured output (`response_schema=Label`, wzorzec już używany w `filings_rag/answer/builder.py`). Przy setkach nagłówków dziennie (01-story.md problem: 150-300/dzień) pojedyncze wywołania wypaliłyby dzienny limit `gemini-3.6-flash` (20 `generate_content`/dzień, zweryfikowane empirycznie w P3) w minuty — S2 **musi** użyć Gemini Batch API (asynchroniczne przetwarzanie, docs/LEARNING.md glosariusz "Batch API"), nie pętli pojedynczych wywołań. Dokładny kształt Batch API do zweryfikowania w `docs/LLM-API.md`/`ai.google.dev` przy implementacji S2, nie zgadnięty tutaj.
+**Zmiana względem pierwotnego planu (sprawdzone na żywo 2026-09-18):** Gemini Batch API zwraca `400 FAILED_PRECONDITION: Gemini API free tier is not available... Please enable billing` — wymaga włączonego billingu, nawet gdy zwykłe pojedyncze wywołania `generate_content` działają na tym samym darmowym kluczu bez problemu. Włączenie billingu (nawet z twardym limitem wydatków) to świadome odejście od zasady zero-cost (CLAUDE.md #9) — właściciel zdecydował: zostajemy przy pojedynczych wywołaniach w dziennym limicie, bez Batch API.
+
+02-spec.md REQ-010 nadal wymaga structured output (`response_schema=Label`, wzorzec już używany w `filings_rag/answer/builder.py`) — ale przez zwykłe `LlmRequest`/`GeminiLlmClient.complete()`, jedno wywołanie na nagłówek. Przy setkach nagłówków dziennie (01-story.md problem: 150-300/dzień) i limicie `gemini-3.6-flash` 20 `generate_content`/dzień (zweryfikowane empirycznie w P3) etykietowanie całego dziennego wolumenu jest niemożliwe w jeden dzień — `label_with_teacher` przyjmuje `max_calls` (ile nagłówków etykietować w tym wywołaniu) i etykietuje resztę korpusu stopniowo, na kolejnych uruchomieniach. Wymaga śledzenia, które nagłówki są już oetykietowane (plik stanu, ten sam wzorzec co `market_pulse/state.py` z P3), żeby powtórne uruchomienie nie płaciło za te same nagłówki drugi raz. Zbiór 300-500 nagłówków do ręcznej kalibracji (REQ-011) urośnie w ciągu tygodni, nie jednego przebiegu — to świadomy kompromis, nie błąd projektu.
 
 ## Rollout and rollback
 
 1. **P4-S1** `models.py`, `ticker_catalog.py` (seed 3 spółek), `ingest/news_rss.py`, `split.py` (kontrakt + dedup). Test importu na żywo dla obu feedów RSS (już zweryfikowane w P3, ten sam wzorzec).
-2. **P4-S2** `labeling/teacher.py` (Batch API), `prompts/teacher.v1.md`, `labeling/calibration.py`. Blokujące pytania właściciela z `02-spec.md` (#1 wybór teachera, #2 ile nagłówków ręcznie) muszą być odpowiedziane przed startem.
+2. **P4-S2** `labeling/teacher.py` (pojedyncze wywołania, `max_calls` per run), `prompts/teacher.v1.md`, `labeling/calibration.py`. Blokujące pytania właściciela z `02-spec.md` (#1 wybór teachera, #2 ile nagłówków ręcznie) muszą być odpowiedziane przed startem.
 3. **P4-S3** `baselines/` (trzy warianty). Test importu `scikit-learn` pierwszy krok, przed jakimkolwiek kodem na nim opartym.
 4. **P4-S4** notebook Colab: fine-tuning HerBERT (encoder + głowica klasyfikacyjna). Checkpoint poza repo (Google Drive/HF Hub prywatnie) — gitignored.
 5. **P4-S5** notebook Colab: LoRA/QLoRA na Bielik (PEFT + TRL albo Unsloth — wybór biblioteki w S5, nie tutaj), wyjście JSON (ten sam `Label` schema).
@@ -151,7 +154,8 @@ Rollback: `git revert` per slice. Korpus/etykiety/checkpointy to dane, nie kod �
 - **`scikit-learn` może wymagać AVX2.** Ryzyko małe (istnieją dystrybucje bez AVX2 dla innych pakietów w tym repo), ale niezweryfikowane — test importu pierwszy krok S3, nie założenie.
 - **Etykiety teachera złej jakości ograniczają ucznia.** Mitygacja: REQ-011, kalibracja kappa przed zaufaniem zbiorowi (docs/EVALS.md próg ≥0,6).
 - **Wyciek między splitami (near-duplicate headlines).** Mitygacja: REQ-005, dedup przed splitem, nie po.
-- **Warunki Google dot. trenowania na wynikach Gemini API** (01-story.md risk) — sprawdzić `docs/LLM-API.md` przed S2, nie zakładać zgody.
+- **Warunki Google dot. trenowania na wynikach Gemini API** (01-story.md risk) — sprawdzone na żywo (`ai.google.dev/gemini-api/terms`, 2026-09-18): zakaz dotyczy modeli "competing with the Services" i wyciągania wag Gemini, nie wąskich klasyfikatorów treningowanych na etykietach. Właściciel świadomie akceptuje pozostałą niejednoznaczność interpretacji.
+- **Etykietowanie teachera bez Batch API rozciąga się na tygodnie** (300-500 nagłówków do kalibracji przy limicie ~20 wywołań/dzień, dzielonym z innymi projektami w repo). Mitygacja: `label_with_teacher`'s `max_calls` + plik stanu już oetykietowanych nagłówków — świadomy kompromis, nie błąd.
 
 ## Handoff notes
 
