@@ -27,13 +27,18 @@ from fin_ai_lab.market_pulse.sources.fred import FredClient
 from fin_ai_lab.market_pulse.sources.nbp import NbpClient
 from fin_ai_lab.market_pulse.sources.news import fetch_news
 from fin_ai_lab.market_pulse.state import changes_since_previous, load_previous, save_current
-from fin_ai_lab.news_classifier.corpus_store import append_labeled
+from fin_ai_lab.news_classifier.corpus_store import append_labeled, load_labeled
 from fin_ai_lab.news_classifier.ingest.news_rss import collect_headlines
 from fin_ai_lab.news_classifier.labeling.progress import (
     headline_key,
     load_labeled_keys,
     save_labeled_keys,
     unlabeled,
+)
+from fin_ai_lab.news_classifier.labeling.review import (
+    DEFAULT_SAMPLE_SIZE,
+    export_for_review,
+    score_calibration,
 )
 from fin_ai_lab.news_classifier.labeling.teacher import label_with_teacher
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Portfolio, Position
@@ -359,6 +364,46 @@ def news_classifier_label(
     typer.echo(f"Labeled {labeled_count} headlines, {len(errors)} errors")
     for error in errors:
         typer.echo(f"  error: {error}", err=True)
+
+
+@news_classifier_app.command("export-review")
+def news_classifier_export_review(
+    output: Path = typer.Option(
+        Path("data/review/news_classifier_review.csv"), "--output"
+    ),
+    sample_size: int = typer.Option(DEFAULT_SAMPLE_SIZE, "--sample-size"),
+) -> None:
+    corpus = load_labeled()
+    if not corpus:
+        typer.echo("Corpus is empty — run 'news-classifier label' first.", err=True)
+        raise typer.Exit(code=1)
+
+    sample = export_for_review(corpus, output, sample_size=sample_size)
+    typer.echo(f"Exported {len(sample)} headlines to {output} for blind manual review.")
+    typer.echo(
+        "Fill in human_sentiment/human_event_type/human_tickers without looking at teacher"
+        " output, then run 'news-classifier score-review'."
+    )
+
+
+@news_classifier_app.command("score-review")
+def news_classifier_score_review(
+    reviewed: Path = typer.Option(Path("data/review/news_classifier_review.csv"), "--reviewed"),
+) -> None:
+    corpus = load_labeled()
+    try:
+        report = score_calibration(corpus, reviewed)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Reviewed: {report['n_reviewed']}/{report['n_exported']} exported rows")
+    typer.echo(f"sentiment kappa:   {report['sentiment_kappa']:.3f}")
+    typer.echo(f"event_type kappa:  {report['event_type_kappa']:.3f}")
+    typer.echo(f"tickers exact match: {report['tickers_exact_match_pct']:.1%}")
+    # REQ-011 / docs/EVALS.md bar.
+    if report["sentiment_kappa"] < 0.6 or report["event_type_kappa"] < 0.6:
+        typer.echo("Below 0.6 kappa bar — teacher labels/prompt need work before training on them.")
 
 
 @investment_committee_app.command("analyze")
