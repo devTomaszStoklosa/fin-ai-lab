@@ -113,7 +113,7 @@ Zero limitu wydatków do ustawienia — klucz zostaje bez billingu. Throttling p
 |---|---|---|---|---|
 | lab-foundation | Ready for dev | Ready for dev | Ready for dev | gotowe (F-1..F-4) |
 | p1-portfolio-xray | Ready for architect | Ready for architect | Ready for dev | gotowe (P1-S1..S6, evale zielone) |
-| p2-filings-rag | Ready for architect | Ready for architect | Ready for dev | gotowe (P2-S1..S7). Ewale rozszerzone (`refusal_reason`, `has_citations`, pytania PL o GPW) nieuruchomione na żywo — czekają na wolny limit Gemini/embeddingów |
-| p3-market-pulse | Ready for architect | Ready for architect | Ready for dev | gotowe (P3-S1..S8). `p3-regime-backtest` zielony (4/4, baseline zapisany); `p3-trajectory` gotowy, nieuruchomiony na żywo (czeka na limit Gemini). Harmonogram (S7): skrypty w `scripts/`, rejestracja zadania na maszynie Tomasza czeka na jego uruchomienie |
-| p4-news-classifier | Ready for ba | — | — | — |
+| p2-filings-rag | Ready for architect | Ready for architect | Ready for dev | gotowe (P2-S1..S7). Ewale rozszerzone (`refusal_reason`, `has_citations`, pytania PL o GPW) — `p2-retrieval-accuracy` na żywo chwilowo blokowane 503 (przeciążenie Gemini, nie limit) 2026-09-18, do ponowienia |
+| p3-market-pulse | Ready for architect | Ready for architect | Ready for dev | gotowe (P3-S1..S8). `p3-regime-backtest` i `p3-trajectory` oba zielone na żywo, baseline zapisane. Harmonogram (S7): skrypty w `scripts/`, rejestracja zadania na maszynie Tomasza czeka na jego uruchomienie |
+| p4-news-classifier | Ready for architect | Ready for architect | — | — |
 | p5-investment-committee | Ready for ba | — | — | — |

@@ -1,6 +1,6 @@
 # p4-news-classifier - Polski klasyfikator newsów finansowych
 
-Status: Ready for ba
+Status: Ready for architect
 Owner role: PO
 Upstream: -
 Links: docs/ROADMAP.md, docs/DATA-SOURCES.md, docs/LLM-API.md
