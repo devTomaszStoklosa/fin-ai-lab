@@ -1,6 +1,6 @@
 # HANDOFF — fin-ai-lab
 
-Data: 2026-09-18, P3 (`market_pulse`) ukończone S1-S8 (sekcja "Stan" i "Stan ticketów" w [ROADMAP.md](docs/ROADMAP.md) zaktualizowane; reszta pliku, w tym "Start następnej sesji", pochodzi z pierwszej sesji 2026-09-14 i częściowo nie jest już aktualna — patrz `docs/ROADMAP.md` dla realnego stanu ticketów).
+Data: 2026-09-18, P2 (`filings_rag`) i P3 (`market_pulse`) ukończone (sekcja "Stan" i "Stan ticketów" w [ROADMAP.md](docs/ROADMAP.md) zaktualizowane; reszta pliku, w tym "Start następnej sesji", pochodzi z pierwszej sesji 2026-09-14 i częściowo nie jest już aktualna — patrz `docs/ROADMAP.md` dla realnego stanu ticketów).
 Źródło: sesja Claude Code uruchomiona w `C:\Users\Tomasz\Desktop\Repo` (Analizoteka), bez RoleKit. Pamięć Claude z tamtej sesji nie jest widoczna w tym katalogu — wszystko, co potrzebne, jest w tym repo.
 
 ## Kontekst
@@ -13,7 +13,7 @@ Data: 2026-09-18, P3 (`market_pulse`) ukończone S1-S8 (sekcja "Stan" i "Stan ti
 
 | Obszar | Stan |
 |---|---|
-| Kod | `lab-foundation`, P1 (`portfolio_xray`) i P3 (`market_pulse`, S1-S8) gotowe; P2 (`filings_rag`) S1–S5 gotowe, S6/S7 w toku — patrz [ROADMAP.md](docs/ROADMAP.md) „Stan ticketów" |
+| Kod | `lab-foundation`, P1 (`portfolio_xray`), P2 (`filings_rag`) i P3 (`market_pulse`) gotowe — patrz [ROADMAP.md](docs/ROADMAP.md) „Stan ticketów" |
 | Git | repozytorium istnieje, publiczny remote [devTomaszStoklosa/fin-ai-lab](https://github.com/devTomaszStoklosa/fin-ai-lab), praca przez ticket+branch+PR |
 | Dokumentacja | README, CLAUDE.md, dokumenty w `docs/`, ADR-y, specyfikacje RoleKit per projekt w `docs/specs/` |
 | Artefakty RoleKit | patrz `docs/ROADMAP.md` „Stan ticketów" — bardziej aktualne niż ten wiersz |
