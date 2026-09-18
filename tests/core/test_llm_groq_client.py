@@ -158,3 +158,23 @@ async def test_complete_raises_response_validation_error_on_schema_mismatch() ->
 
     with pytest.raises(ResponseValidationError):
         await client.complete(request)
+
+
+async def test_complete_adds_a_json_hint_when_response_schema_is_set() -> None:
+    # Groq's response_format=json_object 400s unless some message contains
+    # the literal word "json" (confirmed live) — the client must add this
+    # itself, not rely on the caller's prompt wording it wanted structured
+    # data in JSON.
+    fake = _FakeGroqClient([_FakeResponse('{"text": "hi"}')])
+    client = GroqLlmClient("key", groq_client=fake)
+    request = LlmRequest(
+        model="openai/gpt-oss-20b",
+        messages=[{"role": "user", "text": "greet me"}],
+        response_schema=Greeting,
+    )
+
+    await client.complete(request)
+
+    system_message = fake.calls[0]["messages"][0]
+    assert system_message["role"] == "system"
+    assert "json" in system_message["content"].lower()

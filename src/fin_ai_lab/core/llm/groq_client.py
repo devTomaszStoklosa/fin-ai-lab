@@ -51,10 +51,27 @@ def _tool_schema(tool: Callable) -> dict:
     }
 
 
+# Groq's response_format={"type": "json_object"} 400s unless some message
+# literally contains the word "json" (BadRequestError, confirmed live
+# 2026-09-18 — undocumented on console.groq.com/docs, unlike Gemini's
+# response_schema which needs no such hint). Callers write prompts asking
+# for structured data, not for the literal word "json", so this is the
+# client's job, not every prompt's.
+_JSON_MODE_HINT = "Respond with a single JSON object matching the required schema."
+
+
 def _to_openai_messages(request: LlmRequest) -> list[dict]:
+    system_instruction = request.system_instruction
+    if request.response_schema is not None:
+        system_instruction = (
+            f"{system_instruction}\n\n{_JSON_MODE_HINT}"
+            if system_instruction
+            else _JSON_MODE_HINT
+        )
+
     messages: list[dict] = []
-    if request.system_instruction:
-        messages.append({"role": "system", "content": request.system_instruction})
+    if system_instruction:
+        messages.append({"role": "system", "content": system_instruction})
     messages.extend({"role": m["role"], "content": m["text"]} for m in request.messages)
     return messages
 
