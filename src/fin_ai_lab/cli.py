@@ -24,6 +24,15 @@ from fin_ai_lab.market_pulse.sources.fred import FredClient
 from fin_ai_lab.market_pulse.sources.nbp import NbpClient
 from fin_ai_lab.market_pulse.sources.news import fetch_news
 from fin_ai_lab.market_pulse.state import changes_since_previous, load_previous, save_current
+from fin_ai_lab.news_classifier.corpus_store import append_labeled
+from fin_ai_lab.news_classifier.ingest.news_rss import collect_headlines
+from fin_ai_lab.news_classifier.labeling.progress import (
+    headline_key,
+    load_labeled_keys,
+    save_labeled_keys,
+    unlabeled,
+)
+from fin_ai_lab.news_classifier.labeling.teacher import label_with_teacher
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
@@ -37,12 +46,15 @@ SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
 REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
 FILINGS_RAG_PROMPTS_DIR = Path("src/fin_ai_lab/filings_rag/prompts")
 MARKET_PULSE_PROMPTS_DIR = Path("src/fin_ai_lab/market_pulse/prompts")
+NEWS_CLASSIFIER_PROMPTS_DIR = Path("src/fin_ai_lab/news_classifier/prompts")
 
 app = typer.Typer()
 portfolio_app = typer.Typer()
 app.add_typer(portfolio_app, name="portfolio")
 market_pulse_app = typer.Typer()
 app.add_typer(market_pulse_app, name="market-pulse")
+news_classifier_app = typer.Typer()
+app.add_typer(news_classifier_app, name="news-classifier")
 
 EVALS_DIR = Path("evals")
 
@@ -70,6 +82,7 @@ def eval_command(
     prompts.load_dir(REPORT_PROMPTS_DIR)
     prompts.load_dir(FILINGS_RAG_PROMPTS_DIR)
     prompts.load_dir(MARKET_PULSE_PROMPTS_DIR)
+    prompts.load_dir(NEWS_CLASSIFIER_PROMPTS_DIR)
 
     try:
         summary, run_dir = asyncio.run(
@@ -303,6 +316,36 @@ def market_pulse_ask(
         ask(question, llm_client, prompt_registry, model, fred_client, nbp_client)
     )
     typer.echo(answer.text)
+
+
+@news_classifier_app.command("label")
+def news_classifier_label(
+    max_calls: int = typer.Option(15, "--max-calls", help="Teacher calls to spend this run."),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+) -> None:
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(NEWS_CLASSIFIER_PROMPTS_DIR)
+
+    async def run() -> tuple[int, list[str]]:
+        headlines = await collect_headlines()
+        already_labeled = load_labeled_keys()
+        pending = unlabeled(headlines, already_labeled)
+
+        labeled, errors = await label_with_teacher(
+            pending, llm_client, prompt_registry, model, max_calls=max_calls
+        )
+        if labeled:
+            append_labeled(labeled)
+            already_labeled.update(headline_key(item.headline) for item in labeled)
+            save_labeled_keys(already_labeled)
+        return len(labeled), errors
+
+    labeled_count, errors = asyncio.run(run())
+    typer.echo(f"Labeled {labeled_count} headlines, {len(errors)} errors")
+    for error in errors:
+        typer.echo(f"  error: {error}", err=True)
 
 
 def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:

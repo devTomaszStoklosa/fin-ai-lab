@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from fin_ai_lab.core.errors import ResponseValidationError
 from fin_ai_lab.core.llm.client import LlmRequest, LlmResult, TokenUsage
 from fin_ai_lab.core.llm.embeddings import EmbeddingResult
 
@@ -23,7 +24,14 @@ class FakeLlmClient:
 
         parsed: BaseModel | None = None
         if request.response_schema is not None:
-            parsed = request.response_schema.model_validate_json(text)
+            # Same failure mode as GeminiLlmClient.complete(): a schema
+            # mismatch is a ResponseValidationError, not a raw pydantic one
+            # — tests exercising malformed-output handling should see the
+            # same exception type the real client raises.
+            try:
+                parsed = request.response_schema.model_validate_json(text)
+            except Exception as exc:
+                raise ResponseValidationError(str(exc), raw_response=text) from exc
 
         return LlmResult(
             text=text,
