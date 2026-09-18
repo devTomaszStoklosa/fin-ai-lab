@@ -299,10 +299,10 @@ def market_pulse_ask(
     fred_client = FredClient(settings.require_fred_api_key())
     nbp_client = NbpClient()
 
-    text = asyncio.run(
+    answer = asyncio.run(
         ask(question, llm_client, prompt_registry, model, fred_client, nbp_client)
     )
-    typer.echo(text)
+    typer.echo(answer.text)
 
 
 def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:

@@ -20,7 +20,7 @@ async def test_ask_uses_afc_to_answer_with_a_real_current_value() -> None:
     prompt_registry = PromptRegistry()
     prompt_registry.load_dir(PROMPTS_DIR)
 
-    text = await ask(
+    answer = await ask(
         "What is the current EUR/PLN exchange rate?",
         llm_client,
         prompt_registry,
@@ -29,4 +29,5 @@ async def test_ask_uses_afc_to_answer_with_a_real_current_value() -> None:
         NbpClient(),
     )
 
-    assert text.strip() != ""
+    assert answer.text.strip() != ""
+    assert answer.tool_calls == ["get_nbp_fx_rate"]

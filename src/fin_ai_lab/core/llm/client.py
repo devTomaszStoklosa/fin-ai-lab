@@ -52,6 +52,12 @@ class LlmResult(BaseModel):
     latency_ms: int
     trace_id: str
     span_id: str
+    # Names of tools the model called during automatic function calling
+    # (P3-S2), in order — read from the SDK's own
+    # automatic_function_calling_history (verified live against the
+    # installed SDK, not guessed). Needed for P3-S8's trajectory eval
+    # ("did the agent call the right tools"), not just cost/text.
+    tool_calls: list[str] = []
 
 
 class LlmClient(Protocol):
@@ -127,6 +133,13 @@ class GeminiLlmClient:
         cost_usd = price.cost_usd(usage.input_tokens, usage.output_tokens)
         self.total_cost_usd += cost_usd
 
+        tool_calls = [
+            part.function_call.name
+            for content in (response.automatic_function_calling_history or [])
+            for part in (content.parts or [])
+            if part.function_call is not None
+        ]
+
         self._trace_sink.write(
             TraceSpan(
                 trace_id=trace_id,
@@ -153,4 +166,5 @@ class GeminiLlmClient:
             latency_ms=latency_ms,
             trace_id=trace_id,
             span_id=span_id,
+            tool_calls=tool_calls,
         )

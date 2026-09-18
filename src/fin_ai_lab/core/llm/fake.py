@@ -8,14 +8,18 @@ from fin_ai_lab.core.llm.embeddings import EmbeddingResult
 
 
 class FakeLlmClient:
-    def __init__(self, responses: dict[str, str]) -> None:
+    def __init__(
+        self, responses: dict[str, str], tool_calls: dict[str, list[str]] | None = None
+    ) -> None:
         self._responses = responses
+        self._tool_calls = tool_calls or {}
         self.requests: list[LlmRequest] = []
         self.total_cost_usd = Decimal(0)
 
     async def complete(self, request: LlmRequest) -> LlmResult:
         self.requests.append(request)
-        text = self._responses[request.prompt_id or request.model]
+        key = request.prompt_id or request.model
+        text = self._responses[key]
 
         parsed: BaseModel | None = None
         if request.response_schema is not None:
@@ -31,6 +35,7 @@ class FakeLlmClient:
             latency_ms=0,
             trace_id=uuid.uuid4().hex,
             span_id=uuid.uuid4().hex,
+            tool_calls=self._tool_calls.get(key, []),
         )
 
 

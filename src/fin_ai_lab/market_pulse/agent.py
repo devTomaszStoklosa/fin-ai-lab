@@ -1,8 +1,17 @@
+from pydantic import BaseModel
+
 from fin_ai_lab.core.llm.client import LlmClient, LlmRequest
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.market_pulse.sources.fred import FredClient
 from fin_ai_lab.market_pulse.sources.nbp import NbpClient
 from fin_ai_lab.market_pulse.tools import build_tools
+
+
+class AgentAnswer(BaseModel):
+    text: str
+    # Which tools the model actually called, in order — P3-S8's trajectory
+    # eval grades this (02-spec.md "właściwe narzędzia"), not just the text.
+    tool_calls: list[str]
 
 
 async def ask(
@@ -12,7 +21,7 @@ async def ask(
     model: str,
     fred_client: FredClient,
     nbp_client: NbpClient,
-) -> str:
+) -> AgentAnswer:
     """P3-S2: the model decides which data source(s) to query, instead of
     P3-S1's fixed indicator list — via the SDK's automatic function
     calling (see core.llm.client.LlmRequest.tools)."""
@@ -28,4 +37,4 @@ async def ask(
         prompt_version=1,
     )
     result = await llm_client.complete(request)
-    return result.text
+    return AgentAnswer(text=result.text, tool_calls=result.tool_calls)
