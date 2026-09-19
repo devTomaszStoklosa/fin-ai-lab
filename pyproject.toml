@@ -78,6 +78,10 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = "-m 'not live'"
+# Without this, a locally cloned tools/llama.cpp (P4-S6's conversion
+# script prerequisite, gitignored) gets walked too -- its own test suite
+# has dependencies this project never installs.
+testpaths = ["tests"]
 markers = [
     "live: requires network access and a real API key (GEMINI_API_KEY/GROQ_API_KEY), skipped by default",
 ]

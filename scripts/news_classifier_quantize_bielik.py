@@ -9,13 +9,17 @@ Prerequisites (manual, one-time):
    `data/private/bielik_lora_adapter/` (gitignored, same pattern as
    `data/private/herbert_checkpoints/`).
 2. Clone llama.cpp (only its pure-Python `convert_hf_to_gguf.py` is
-   needed here, no C++ build) and install its conversion requirements:
+   needed here, no C++ build) into an isolated venv — its conversion
+   requirements pin `transformers==4.57.6`/`torch==2.11.0`, both older
+   than this project's own (`transformers>=5.0`), so they must not go
+   into this repo's `.venv`:
        git clone https://github.com/ggml-org/llama.cpp tools/llama.cpp
-       uv run python -m pip install -r \
+       uv venv tools/convert-venv --python 3.12
+       uv pip install --python tools/convert-venv -r \
            tools/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
-   `tools/` is gitignored — this is a local build tool, not this repo's
-   own code.
-3. `uv sync --extra quantized` (llama-cpp-python, peft, transformers).
+   `tools/` is gitignored — local build tooling, not this repo's own code.
+3. `uv sync --extra quantized` (llama-cpp-python, peft, transformers) in
+   this repo's own `.venv`, for the merge and quantize steps below.
 4. Accept `speakleash/Bielik-1.5B-v3.0-Instruct`'s access conditions and
    log in (`huggingface_hub.login()`), same as `bielik_lora_finetune.ipynb`.
 
@@ -23,13 +27,17 @@ Run: `uv run python scripts/news_classifier_quantize_bielik.py`.
 """
 
 import subprocess
-import sys
 from pathlib import Path
 
 MODEL_ID = "speakleash/Bielik-1.5B-v3.0-Instruct"
 ADAPTER_DIR = Path("data/private/bielik_lora_adapter")
 MERGED_DIR = Path("data/private/bielik_merged")
 LLAMA_CPP_DIR = Path("tools/llama.cpp")
+# The conversion script needs transformers==4.57.6/torch==2.11.0 (pinned
+# by llama.cpp's own requirements file), incompatible with this repo's
+# own transformers>=5.0 -- runs in the isolated venv from this script's
+# docstring, never with this process's own interpreter.
+CONVERT_PYTHON = Path("tools/convert-venv/Scripts/python.exe")
 GGUF_F16_PATH = Path("data/private/bielik_quantized/model-f16.gguf")
 GGUF_OUT_PATH = Path("data/private/bielik_quantized/model.gguf")
 
@@ -70,11 +78,16 @@ def convert_to_gguf() -> None:
         raise FileNotFoundError(
             f"{convert_script} not found — clone llama.cpp first (see this script's docstring)"
         )
+    if not CONVERT_PYTHON.exists():
+        raise FileNotFoundError(
+            f"{CONVERT_PYTHON} not found — create the isolated conversion venv first"
+            " (see this script's docstring)"
+        )
 
     GGUF_F16_PATH.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
-            sys.executable,
+            str(CONVERT_PYTHON),
             str(convert_script),
             str(MERGED_DIR),
             "--outfile",
