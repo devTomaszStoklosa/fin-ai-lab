@@ -1,6 +1,6 @@
 # HANDOFF — fin-ai-lab
 
-Data: 2026-09-18, P2 (`filings_rag`) i P3 (`market_pulse`) ukończone, P4 (`news_classifier`) S1-S3 gotowe (Groq jako drugi provider LLM, ADR 0007), P5 (`investment_committee`) BA spec + architekt gotowe, S1 gotowe (sekcja "Stan" i "Stan ticketów" w [ROADMAP.md](docs/ROADMAP.md) zaktualizowane; reszta pliku, w tym "Start następnej sesji", pochodzi z pierwszej sesji 2026-09-14 i częściowo nie jest już aktualna — patrz `docs/ROADMAP.md` dla realnego stanu ticketów).
+Data: 2026-09-19, P2 (`filings_rag`) i P3 (`market_pulse`) ukończone, P4 (`news_classifier`) S1-S3 gotowe (Groq jako drugi provider LLM, ADR 0007; kalibracja kappa REQ-011 zrobiona, wynik poniżej progu 0,6, właściciel świadomie przyjął), P5 (`investment_committee`) BA spec + architekt gotowe, S1 gotowe (sekcja "Stan" i "Stan ticketów" w [ROADMAP.md](docs/ROADMAP.md) zaktualizowane; reszta pliku, w tym "Start następnej sesji", pochodzi z pierwszej sesji 2026-09-14 i częściowo nie jest już aktualna — patrz `docs/ROADMAP.md` dla realnego stanu ticketów).
 Źródło: sesja Claude Code uruchomiona w `C:\Users\Tomasz\Desktop\Repo` (Analizoteka), bez RoleKit. Pamięć Claude z tamtej sesji nie jest widoczna w tym katalogu — wszystko, co potrzebne, jest w tym repo.
 
 ## Kontekst
