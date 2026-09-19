@@ -16,7 +16,8 @@ Wynik: dwa niezależne checkpointy (`sentiment`, `event_type`) zapisane na Drive
 1. Wgraj ten sam `data/corpus/news_classifier/labeled.jsonl` na Drive (można użyć tej samej ścieżki co dla `herbert_finetune.ipynb`).
 2. Otwórz notebook w Colab.
 3. `Runtime` → `Change runtime type` → **T4 GPU**.
-4. Uruchom komórki po kolei — ustaw `CORPUS_PATH` jak w kroku 1.
+4. `speakleash/Bielik-1.5B-v3.0-Instruct` jest gated (znalezione na żywo: 401 `GatedRepoError` bez tego) — zaakceptuj warunki na [karcie modelu](https://huggingface.co/speakleash/Bielik-1.5B-v3.0-Instruct) i przygotuj token odczytu (`huggingface.co/settings/tokens`) na komórkę logowania (`huggingface_hub.login()`).
+5. Uruchom komórki po kolei — ustaw `CORPUS_PATH` jak w kroku 1.
 
 Wynik: adapter LoRA (nie cały model, tylko wagi adaptera) zapisany na Drive w `CHECKPOINT_DIR`, plus macro-F1 na test-split i liczba błędów schematu (REQ-012 — model generatywny może zwrócić niepoprawny JSON/enum, liczone jako błąd, nie zgadywane).
 
