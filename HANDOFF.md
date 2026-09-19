@@ -1,6 +1,6 @@
 # HANDOFF — fin-ai-lab
 
-Data: 2026-09-19, P2 (`filings_rag`) i P3 (`market_pulse`) ukończone, P4 (`news_classifier`) S1-S3 gotowe (Groq jako drugi provider LLM, ADR 0007; kalibracja kappa REQ-011 zrobiona, wynik poniżej progu 0,6, właściciel świadomie przyjął), P5 (`investment_committee`) BA spec + architekt gotowe, S1 gotowe (sekcja "Stan" i "Stan ticketów" w [ROADMAP.md](docs/ROADMAP.md) zaktualizowane; reszta pliku, w tym "Start następnej sesji", pochodzi z pierwszej sesji 2026-09-14 i częściowo nie jest już aktualna — patrz `docs/ROADMAP.md` dla realnego stanu ticketów).
+Data: 2026-09-19, P2 (`filings_rag`) i P3 (`market_pulse`) ukończone, P4 (`news_classifier`) S1-S4 gotowe (Groq jako drugi provider LLM, ADR 0007; kalibracja kappa REQ-011 zrobiona, wynik poniżej progu 0,6, właściciel świadomie przyjął; S4 HerBERT fine-tune na Colab, macro-F1 sentiment 0,254 / event_type 0,049 — sanity check pipeline'u na 92-nagłówkowym korpusie, model kolabsuje do klasy większościowej), P5 (`investment_committee`) BA spec + architekt gotowe, S1 gotowe (sekcja "Stan" i "Stan ticketów" w [ROADMAP.md](docs/ROADMAP.md) zaktualizowane; reszta pliku, w tym "Start następnej sesji", pochodzi z pierwszej sesji 2026-09-14 i częściowo nie jest już aktualna — patrz `docs/ROADMAP.md` dla realnego stanu ticketów).
 Źródło: sesja Claude Code uruchomiona w `C:\Users\Tomasz\Desktop\Repo` (Analizoteka), bez RoleKit. Pamięć Claude z tamtej sesji nie jest widoczna w tym katalogu — wszystko, co potrzebne, jest w tym repo.
 
 ## Kontekst
@@ -13,7 +13,7 @@ Data: 2026-09-19, P2 (`filings_rag`) i P3 (`market_pulse`) ukończone, P4 (`news
 
 | Obszar | Stan |
 |---|---|
-| Kod | `lab-foundation`, P1 (`portfolio_xray`), P2 (`filings_rag`), P3 (`market_pulse`) i P4 (`news_classifier`, S1-S3) gotowe; P5 (`investment_committee`) S1 gotowe, czeka na realny test na żywo — patrz [ROADMAP.md](docs/ROADMAP.md) „Stan ticketów" |
+| Kod | `lab-foundation`, P1 (`portfolio_xray`), P2 (`filings_rag`), P3 (`market_pulse`) i P4 (`news_classifier`, S1-S4) gotowe; P5 (`investment_committee`) S1 gotowe, czeka na realny test na żywo — patrz [ROADMAP.md](docs/ROADMAP.md) „Stan ticketów" |
 | Git | repozytorium istnieje, publiczny remote [devTomaszStoklosa/fin-ai-lab](https://github.com/devTomaszStoklosa/fin-ai-lab), praca przez ticket+branch+PR |
 | Dokumentacja | README, CLAUDE.md, dokumenty w `docs/`, ADR-y, specyfikacje RoleKit per projekt w `docs/specs/` |
 | Artefakty RoleKit | patrz `docs/ROADMAP.md` „Stan ticketów" — bardziej aktualne niż ten wiersz |
