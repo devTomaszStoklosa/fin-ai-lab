@@ -6,8 +6,8 @@ training/few-shot, so only the test split qualifies).
 
 `core/evals`'s loader always reads `<suite_dir>/cases.jsonl` (no shared-
 cases mechanism across suites) — rather than change that shared contract
-for one project, this script writes identical copies into the four
-p4-classifier-* suite directories, so they stay in sync mechanically.
+for one project, this script writes identical copies into every
+p4-classifier-* suite directory, so they stay in sync mechanically.
 
 Run once from the repo root: `uv run python scripts/news_classifier_build_eval_cases.py`.
 """
@@ -26,6 +26,7 @@ SUITE_DIRS = [
     Path("evals/p4-classifier-tfidf"),
     Path("evals/p4-classifier-few-shot"),
     Path("evals/p4-classifier-herbert"),
+    Path("evals/p4-classifier-quantized"),
 ]
 
 

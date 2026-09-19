@@ -16,6 +16,7 @@ SUITES = {
     "tfidf": "p4-classifier-tfidf",
     "few-shot": "p4-classifier-few-shot",
     "herbert": "p4-classifier-herbert",
+    "quantized": "p4-classifier-quantized",
 }
 
 

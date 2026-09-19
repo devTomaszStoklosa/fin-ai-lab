@@ -30,7 +30,8 @@ Nowoczesne binarne paczki bywają kompilowane pod AVX2 i kończą się błędem 
 |---|---|---|
 | `polars` | standardowy build wymaga nowszych instrukcji CPU | użyj `polars-lts-cpu` albo `pandas` + `duckdb` |
 | `faiss-cpu` | ryzyko wymagania AVX2 | niepotrzebny: wyszukiwanie wektorowe w `numpy` wystarczy dla korpusów do ~100 tys. chunków |
-| `llama.cpp`, Ollama | zależy od wariantu buildu | zweryfikuj przed P4-S6 |
+| `llama-cpp-python` | zweryfikowany 2026-09-19, OK | brak koła na tę platformę — buduje się ze źródła (~12 min), potem działa bez problemu z AVX2 — patrz tabela zgodności |
+| Ollama | zależy od wariantu buildu | niezweryfikowane — `llama-cpp-python` już wystarcza do P4-S6 |
 | `torch` (CPU) | zweryfikowany 2026-09-19, OK | pełny BERT-base forward pass ~142ms/nagłówek — patrz tabela zgodności |
 | `onnxruntime`, `lancedb`, `sentence-transformers` | niezweryfikowane | test importu i jednej operacji przed adopcją |
 
@@ -78,3 +79,4 @@ Uzupełniana przy każdym teście importu.
 | `scikit-learn` | 1.9.1 | import + `TfidfVectorizer` + `LogisticRegression.fit/predict` | 2026-09-18 | OK, bez problemów z AVX2 — ekstra `ml` (P4-S3, baseline TF-IDF+LR) |
 | `torch` (CPU) | 2.14.0+cpu | import + `nn.Linear` forward + pełny BERT-base-shaped `AutoModelForSequenceClassification` forward pass (20 powtórzeń) | 2026-09-19 | OK, bez problemów z AVX2 — ~142ms/nagłówek na CPU, wystarczy do lokalnej inferencji HerBERT (P4-S7 REQ-021) |
 | `transformers` | 5.17.0 | import + `AutoTokenizer.from_pretrained` + `AutoModelForSequenceClassification` forward | 2026-09-19 | OK — ekstra `herbert` (P4-S7) |
+| `llama-cpp-python` | 0.3.35 | import + realna inferencja (`Llama(...)`, `ggml-org/test-model-stories260K`, 1 MB) | 2026-09-19 | OK, bez problemów z AVX2 — brak koła na tę platformę, budowa ze źródła ~12 min — ekstra `quantized` (P4-S6) |

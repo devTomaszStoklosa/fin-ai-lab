@@ -48,6 +48,11 @@ groq = ["groq>=1.7.0"]
 # P4-S7 comparison report (REQ-021: latency/cost measured on the real
 # target hardware, not assumed from Colab GPU).
 herbert = ["torch>=2.14", "transformers>=5.0"]
+# llama-cpp-python verified on this machine 2026-09-19 (docs/ENVIRONMENT.md)
+# — no wheel for this platform, builds from source (~12 min), then runs
+# fine with no AVX2 issue. peft is for the one-time LoRA-merge step in
+# scripts/news_classifier_quantize_bielik.py, not the runtime classifier.
+quantized = ["llama-cpp-python>=0.3", "peft>=0.13", "transformers>=5.0"]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"
