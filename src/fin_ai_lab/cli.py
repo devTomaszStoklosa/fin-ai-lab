@@ -54,6 +54,11 @@ from fin_ai_lab.portfolio_xray.report.builder import ReportRejectedError
 from fin_ai_lab.portfolio_xray.report.orchestrator import ReportGenerationError, generate_report
 from fin_ai_lab.portfolio_xray.service import import_file
 
+# Windows' default stdout/stderr encoding is cp1252, not UTF-8 -- garbles
+# Polish diacritics in report text even when redirected to a file (#145).
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 PORTFOLIO_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
 SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
 REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
