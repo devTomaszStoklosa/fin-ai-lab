@@ -6,6 +6,7 @@ from decimal import Decimal
 from fin_ai_lab.core.llm.client import LlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.investment_committee.budget import BudgetGuard
+from fin_ai_lab.investment_committee.critic import critique_brief
 from fin_ai_lab.investment_committee.models import Brief, CommitteeReport
 from fin_ai_lab.investment_committee.subagents.fundamental import run_fundamental_brief
 from fin_ai_lab.investment_committee.subagents.macro import run_macro_brief
@@ -45,9 +46,10 @@ async def run_committee(
     budget: BudgetGuard,
     fx_client: NbpFxClient | None = None,
 ) -> CommitteeReport:
-    """P5-S2/S3: orchestrator-workers, same pattern as P3-S4's `build_brief`
-    — dispatches the four perspective subagents in parallel, then assembles
-    the report in code (REQ-004: the supervisor never recomputes a number a
+    """P5-S2/S3/S4: orchestrator-workers, same pattern as P3-S4's
+    `build_brief` — dispatches the four perspective subagents in parallel,
+    runs each brief through the critic (REQ-041), then assembles the
+    report in code (REQ-004: the supervisor never recomputes a number a
     subagent already produced, it only concatenates their conclusions and
     flags disagreement). The stress ("Kwant") subagent makes no LLM call at
     all (REQ-030) — its budget cost is always zero."""
@@ -62,21 +64,27 @@ async def run_committee(
         tool.__name__: tool for tool in build_tools(portfolio, fred_client, nbp_client)
     }
 
+    draft_briefs = await asyncio.gather(
+        run_fundamental_brief(
+            tools_by_name["ask_about_filings"],
+            llm_client, prompt_registry, model, portfolio_id, budget,
+        ),
+        run_macro_brief(
+            tools_by_name["get_market_regime"],
+            llm_client, prompt_registry, model, portfolio_id, budget,
+        ),
+        run_sentiment_brief(
+            tools_by_name["get_news_sentiment"],
+            llm_client, prompt_registry, model, portfolio_id, budget,
+        ),
+        run_stress_brief(portfolio, fx_client or NbpFxClient()),
+    )
     briefs = list(
         await asyncio.gather(
-            run_fundamental_brief(
-                tools_by_name["ask_about_filings"],
-                llm_client, prompt_registry, model, portfolio_id, budget,
-            ),
-            run_macro_brief(
-                tools_by_name["get_market_regime"],
-                llm_client, prompt_registry, model, portfolio_id, budget,
-            ),
-            run_sentiment_brief(
-                tools_by_name["get_news_sentiment"],
-                llm_client, prompt_registry, model, portfolio_id, budget,
-            ),
-            run_stress_brief(portfolio, fx_client or NbpFxClient()),
+            *(
+                critique_brief(brief, llm_client, prompt_registry, model, budget)
+                for brief in draft_briefs
+            )
         )
     )
 
