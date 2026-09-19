@@ -17,6 +17,7 @@ from fin_ai_lab.core.llm.groq_client import GroqLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.investment_committee.budget import BudgetGuard
 from fin_ai_lab.investment_committee.single_agent import run_single_agent
+from fin_ai_lab.investment_committee.supervisor import run_committee
 from fin_ai_lab.market_pulse.agent import ask
 from fin_ai_lab.market_pulse.alerts import check_alerts
 from fin_ai_lab.market_pulse.brief import build_brief
@@ -457,6 +458,9 @@ def investment_committee_analyze(
     yes: bool = typer.Option(
         False, "--yes", help="Accept a newly proposed parser config without asking."
     ),
+    committee: bool = typer.Option(
+        False, "--committee", help="Run the P5-S2 committee instead of the S1 single agent."
+    ),
 ) -> None:
     if account_type not in get_args(AccountType):
         typer.echo(f"Invalid account type '{account_type}'", err=True)
@@ -493,10 +497,16 @@ def investment_committee_analyze(
             raise ReportGenerationError("; ".join(result.errors))
 
         portfolio = Portfolio(positions=result.positions, valuation_date=parsed_date)
-        report = await run_single_agent(
-            portfolio, str(file), fred_client, nbp_client,
-            llm_client, prompt_registry, model, budget,
-        )
+        if committee:
+            report = await run_committee(
+                portfolio, str(file), fred_client, nbp_client,
+                llm_client, prompt_registry, model, budget,
+            )
+        else:
+            report = await run_single_agent(
+                portfolio, str(file), fred_client, nbp_client,
+                llm_client, prompt_registry, model, budget,
+            )
         return report.text
 
     try:
