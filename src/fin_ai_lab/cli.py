@@ -16,6 +16,8 @@ from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.llm.groq_client import GroqLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.investment_committee.budget import BudgetGuard
+from fin_ai_lab.investment_committee.models import ComparisonReport
+from fin_ai_lab.investment_committee.qa_target import compare_committee_vs_single
 from fin_ai_lab.investment_committee.single_agent import run_single_agent
 from fin_ai_lab.investment_committee.supervisor import run_committee
 from fin_ai_lab.market_pulse.agent import ask
@@ -520,6 +522,77 @@ def investment_committee_analyze(
         raise typer.Exit(code=1) from exc
 
     typer.echo(text)
+
+
+@investment_committee_app.command("compare")
+def investment_committee_compare(
+    file: Path,
+    valuation_date: str = typer.Option(..., "--valuation-date", help="YYYY-MM-DD"),
+    account_type: str = typer.Option("regular", "--account-type"),
+    market_currency: str = typer.Option("PLN", "--market-currency"),
+    broker: str | None = typer.Option(
+        None, "--broker", help="Required only if the file's format is not yet recognized."
+    ),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    budget_usd: str = typer.Option("1.00", "--budget-usd"),
+    yes: bool = typer.Option(
+        False, "--yes", help="Accept a newly proposed parser config without asking."
+    ),
+) -> None:
+    """P5-S7, REQ-050: single agent vs committee on the same portfolio and
+    the same per-variant budget — quality (LLM judge), cost, latency."""
+    if account_type not in get_args(AccountType):
+        typer.echo(f"Invalid account type '{account_type}'", err=True)
+        raise typer.Exit(code=1)
+
+    parsed_date = datetime.strptime(valuation_date, "%Y-%m-%d").date()
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(INVESTMENT_COMMITTEE_PROMPTS_DIR)
+    registry = ParserRegistry()
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+
+    def approve(config: ParserConfig, positions: list[Position]) -> bool:
+        return _confirm_new_config(config, positions, yes)
+
+    async def run() -> ComparisonReport:
+        result = await import_file(
+            file.read_bytes(),
+            valuation_date=parsed_date,
+            account_type=account_type,
+            market_currency=market_currency,
+            registry=registry,
+            broker_hint=broker,
+            llm_client=llm_client,
+            prompt_registry=prompt_registry,
+            model=model,
+            on_new_config_proposed=approve,
+        )
+        if result.errors:
+            raise ReportGenerationError("; ".join(result.errors))
+
+        portfolio = Portfolio(positions=result.positions, valuation_date=parsed_date)
+        return await compare_committee_vs_single(
+            portfolio, str(file), fred_client, nbp_client,
+            llm_client, prompt_registry, model, Decimal(budget_usd),
+        )
+
+    try:
+        report = asyncio.run(run())
+    except ReportGenerationError as exc:
+        typer.echo(f"Aborted: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"Zwycięzca jakości: {report.quality_winner} — {report.quality_reason}\n\n"
+        f"single_agent: koszt {report.single_agent.cost_usd} USD, "
+        f"latencja {report.single_agent.latency_ms} ms\n"
+        f"committee:    koszt {report.committee.cost_usd} USD, "
+        f"latencja {report.committee.latency_ms} ms"
+    )
 
 
 def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:

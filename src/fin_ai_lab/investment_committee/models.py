@@ -49,3 +49,17 @@ class CommitteeReport(BaseModel):
     reckoning: list[Thesis] = []
     text: str
     cost_usd: Decimal = Decimal(0)
+
+
+class VariantResult(BaseModel):
+    text: str
+    cost_usd: Decimal
+    latency_ms: int
+
+
+class ComparisonReport(BaseModel):
+    portfolio_id: str
+    single_agent: VariantResult
+    committee: VariantResult
+    quality_winner: Literal["single_agent", "committee", "tie"]
+    quality_reason: str
