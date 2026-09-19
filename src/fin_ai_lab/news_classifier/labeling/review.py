@@ -1,10 +1,13 @@
 import csv
 import random
+from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
 
+from pydantic import ValidationError
+
 from fin_ai_lab.news_classifier.labeling.calibration import cohens_kappa
-from fin_ai_lab.news_classifier.models import LabeledHeadline
+from fin_ai_lab.news_classifier.models import Headline, Label, LabeledHeadline
 
 # REQ-011 / docs/EVALS.md "Kalibracja LLM-as-judge": the human rates blind,
 # before seeing the model's answer, then agreement is computed — never the
@@ -128,6 +131,47 @@ def score_calibration(sample: list[LabeledHeadline], reviewed_path: Path) -> Cal
         event_type_kappa=cohens_kappa(teacher_event_types, human_event_types),
         tickers_exact_match_pct=exact_ticker_matches / len(matched),
     )
+
+
+def build_golden_set(reviewed_path: Path) -> list[LabeledHeadline]:
+    """P4-S7: the human-reviewed CSV already carries real ground-truth
+    labels (REQ-011's calibration review), so it doubles as the golden
+    test set for the comparison report — no separate manual labeling pass
+    needed. Rows the human left blank are skipped, same as
+    `_read_reviewed_rows`; `source_model="human"` marks these as ground
+    truth, never a model's own prediction.
+
+    A row whose `human_event_type`/`human_sentiment` isn't one of the
+    exact label values (e.g. a human typing "rekomendacja" instead of the
+    full "rekomendacja lub rating") is skipped too, not guessed — this is
+    free-text spreadsheet input, a real system boundary, and guessing the
+    intended label would silently corrupt the ground truth it's supposed
+    to be."""
+    golden: list[LabeledHeadline] = []
+    with reviewed_path.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            sentiment = row["human_sentiment"].strip()
+            event_type = row["human_event_type"].strip()
+            if not sentiment or not event_type:
+                continue
+            tickers = [t.strip() for t in row["human_tickers"].split(",") if t.strip()]
+            try:
+                label = Label(sentiment=sentiment, event_type=event_type, tickers=tickers)
+            except ValidationError:
+                continue
+            golden.append(
+                LabeledHeadline(
+                    headline=Headline(
+                        headline=row["headline"],
+                        lead=row["lead"] or None,
+                        source=row["source"],
+                        published_at=datetime.fromisoformat(row["published_at"]),
+                    ),
+                    label=label,
+                    source_model="human",
+                )
+            )
+    return golden
 
 
 def _sample(labeled: list[LabeledHeadline], sample_size: int) -> list[LabeledHeadline]:

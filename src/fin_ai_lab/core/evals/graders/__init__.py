@@ -1,4 +1,5 @@
 from fin_ai_lab.core.errors import GraderError
+from fin_ai_lab.core.evals.graders.classification_metrics import ClassificationMetricsGrader
 from fin_ai_lab.core.evals.graders.exact import ExactGrader
 from fin_ai_lab.core.evals.graders.forbidden import ForbiddenGrader
 from fin_ai_lab.core.evals.graders.llm_judge import LlmJudgeGrader
@@ -14,6 +15,7 @@ _GRADER_TYPES = {
     "set_f1": SetF1Grader,
     "forbidden": ForbiddenGrader,
     "llm_judge": LlmJudgeGrader,
+    "classification_metrics": ClassificationMetricsGrader,
 }
 
 

@@ -31,7 +31,8 @@ Nowoczesne binarne paczki bywają kompilowane pod AVX2 i kończą się błędem 
 | `polars` | standardowy build wymaga nowszych instrukcji CPU | użyj `polars-lts-cpu` albo `pandas` + `duckdb` |
 | `faiss-cpu` | ryzyko wymagania AVX2 | niepotrzebny: wyszukiwanie wektorowe w `numpy` wystarczy dla korpusów do ~100 tys. chunków |
 | `llama.cpp`, Ollama | zależy od wariantu buildu | zweryfikuj przed P4-S6 |
-| `torch` (CPU), `onnxruntime`, `lancedb`, `sentence-transformers` | niezweryfikowane | test importu i jednej operacji przed adopcją |
+| `torch` (CPU) | zweryfikowany 2026-09-19, OK | pełny BERT-base forward pass ~142ms/nagłówek — patrz tabela zgodności |
+| `onnxruntime`, `lancedb`, `sentence-transformers` | niezweryfikowane | test importu i jednej operacji przed adopcją |
 
 Zasada: każda nowa zależność natywna dostaje test importu w `tests/test_environment.py` (patrz `lab-foundation`), a wynik trafia do tabeli zgodności poniżej.
 
@@ -75,3 +76,5 @@ Uzupełniana przy każdym teście importu.
 | `pypdf` | 6.19.0 | import + parsowanie realnego 10-K SEC (extract_text, outline) | 2026-09-16 | OK, czysty Python (bez natywnych rozszerzeń) — ekstra `rag` (P2-S1) |
 | `bm25s` | 0.3.11 | import + `BM25().index()` + `retrieve()` na małym korpusie | 2026-09-17 | OK, bez problemów z AVX2 — ekstra `rag` (P2-S3, hybrid search) |
 | `scikit-learn` | 1.9.1 | import + `TfidfVectorizer` + `LogisticRegression.fit/predict` | 2026-09-18 | OK, bez problemów z AVX2 — ekstra `ml` (P4-S3, baseline TF-IDF+LR) |
+| `torch` (CPU) | 2.14.0+cpu | import + `nn.Linear` forward + pełny BERT-base-shaped `AutoModelForSequenceClassification` forward pass (20 powtórzeń) | 2026-09-19 | OK, bez problemów z AVX2 — ~142ms/nagłówek na CPU, wystarczy do lokalnej inferencji HerBERT (P4-S7 REQ-021) |
+| `transformers` | 5.17.0 | import + `AutoTokenizer.from_pretrained` + `AutoModelForSequenceClassification` forward | 2026-09-19 | OK — ekstra `herbert` (P4-S7) |

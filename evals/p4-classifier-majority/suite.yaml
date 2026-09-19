@@ -1,0 +1,10 @@
+name: p4-classifier-majority
+dataset_version: 1
+target: fin_ai_lab.news_classifier.qa_target:majority_target
+graders:
+  - type: classification_metrics
+    field: sentiment
+  - type: classification_metrics
+    field: event_type
+repeats: 1
+concurrency: 4

@@ -1,0 +1,13 @@
+name: p4-classifier-few-shot
+dataset_version: 1
+target: fin_ai_lab.news_classifier.qa_target:few_shot_target
+model: openai/gpt-oss-120b
+prompt_versions:
+  few_shot: 1
+graders:
+  - type: classification_metrics
+    field: sentiment
+  - type: classification_metrics
+    field: event_type
+repeats: 1
+concurrency: 1

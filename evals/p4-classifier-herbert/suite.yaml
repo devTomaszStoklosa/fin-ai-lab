@@ -1,0 +1,10 @@
+name: p4-classifier-herbert
+dataset_version: 1
+target: fin_ai_lab.news_classifier.qa_target_herbert:herbert_target
+graders:
+  - type: classification_metrics
+    field: sentiment
+  - type: classification_metrics
+    field: event_type
+repeats: 1
+concurrency: 1
