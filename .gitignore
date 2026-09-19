@@ -12,6 +12,7 @@ data/briefs/
 data/corpus/
 data/news_classifier_runs/
 data/review/
+data/memory/
 
 # Model artifacts
 models/

@@ -32,6 +32,12 @@ class Thesis(BaseModel):
     statement: str
     made_at: date
     horizon: str
+    # ASSUMPTION (03-design.md's contract sketch omits both — added because
+    # REQ-011 is unimplementable without them): `perspective` groups theses
+    # for the per-perspective Brier score REQ-011 asks for; `confidence` is
+    # the predicted probability of "accurate" a Brier score needs as input.
+    perspective: Perspective
+    confidence: float
     outcome: ThesisOutcome | None = None
 
 
