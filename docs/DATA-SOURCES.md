@@ -32,7 +32,8 @@ Werdykty licencyjne dla źródeł wspólnych z Analizoteką pochodzą z jej plan
 | FinanceBench (Patronus AI) | otwarta próbka ok. 150 pytań do raportów spółek US | nie | — | tak | sprawdź licencję | P2 |
 | FinancialPhraseBank | zdania finansowe EN z sentymentem | nie | — | tak | **nie** (CC BY-NC-SA 3.0) | P4 |
 | FiQA | sentyment i QA finansowe EN | nie | — | tak | sprawdź licencję | P4 |
-| Checkpointy HerBERT / Bielik | modele bazowe do fine-tuningu | nie | — | tak | licencja zależy od checkpointu — czytaj model card | P4 |
+| HerBERT (`allegro/herbert-base-cased`) | encoder PL do fine-tuningu (P4-S4) | nie | — | tak | **CC BY 4.0** (zweryfikowane na kartach modelu HF, 2026-09-19) | P4 |
+| Checkpointy Bielik | model bazowy do fine-tuningu (P4-S5) | nie | — | tak | licencja zależy od checkpointu — czytaj model card przed użyciem | P4 |
 
 ### FRED — licencja per seria
 
