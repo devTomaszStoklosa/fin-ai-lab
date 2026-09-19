@@ -56,6 +56,7 @@ evals/runs/<timestamp>-<suite>/  # results.jsonl, summary.json, report.md (gitig
 | `retrieval` | RAG | recall@k, MRR względem złotych fragmentów |
 | `llm_judge` | jakość tekstu wg rubryki | wynik strukturalny `{score, pass, reason}` |
 | `pairwise_judge` | A/B dwóch wariantów | kolejność losowana, sędzia nie wie, który wariant jest który |
+| `classification_metrics` | pole kategoryczne (jak `exact`, ale nazwa gradera per pole — `grader:classification:<field>`) | zapisuje `expected`/`actual` w `details`, żeby raport porównawczy policzył prawdziwe macro-F1/confusion matrix z `results.jsonl` (P4-S7) — sam `avg_score` z runnera to trafność per przypadek, nie macro-F1 |
 
 ### Kalibracja LLM-as-judge
 

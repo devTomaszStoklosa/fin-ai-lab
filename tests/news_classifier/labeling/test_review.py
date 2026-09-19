@@ -6,6 +6,7 @@ import pytest
 
 from fin_ai_lab.news_classifier.labeling.review import (
     _FIELDNAMES,
+    build_golden_set,
     export_for_review,
     score_calibration,
 )
@@ -184,3 +185,75 @@ def test_score_calibration_raises_when_nothing_was_reviewed(tmp_path: Path) -> N
 
     with pytest.raises(ValueError):
         score_calibration(corpus, reviewed_path)
+
+
+def test_build_golden_set_uses_human_labels_and_skips_blank_rows(tmp_path: Path) -> None:
+    reviewed_path = tmp_path / "reviewed.csv"
+    _write_reviewed(
+        reviewed_path,
+        [
+            {
+                "headline": "Orlen podaje wyniki",
+                "lead": "Spółka informuje o wzroście przychodów",
+                "source": "bankier",
+                "published_at": "2026-09-18T12:00:00",
+                "human_sentiment": "positive",
+                "human_event_type": "wyniki finansowe",
+                "human_tickers": "PKN",
+            },
+            {
+                "headline": "Nieoceniony nagłówek",
+                "lead": "",
+                "source": "bankier",
+                "published_at": "2026-09-18T12:00:00",
+                "human_sentiment": "",
+                "human_event_type": "",
+                "human_tickers": "",
+            },
+        ],
+    )
+
+    golden = build_golden_set(reviewed_path)
+
+    assert len(golden) == 1
+    item = golden[0]
+    assert item.headline.headline == "Orlen podaje wyniki"
+    assert item.headline.lead == "Spółka informuje o wzroście przychodów"
+    assert item.label.sentiment == "positive"
+    assert item.label.event_type == "wyniki finansowe"
+    assert item.label.tickers == ["PKN"]
+    assert item.source_model == "human"
+
+
+def test_build_golden_set_skips_a_row_with_an_invalid_label_value(tmp_path: Path) -> None:
+    reviewed_path = tmp_path / "reviewed.csv"
+    _write_reviewed(
+        reviewed_path,
+        [
+            {
+                "headline": "WIG wraca do wzrostów",
+                "lead": "",
+                "source": "bankier",
+                "published_at": "2026-09-18T12:00:00",
+                "human_sentiment": "positive",
+                # Shorthand typo, not the exact "rekomendacja lub rating"
+                # literal — real free-text input, not guessed.
+                "human_event_type": "rekomendacja",
+                "human_tickers": "",
+            },
+            {
+                "headline": "Orlen podaje wyniki",
+                "lead": "",
+                "source": "bankier",
+                "published_at": "2026-09-18T12:00:00",
+                "human_sentiment": "positive",
+                "human_event_type": "wyniki finansowe",
+                "human_tickers": "PKN",
+            },
+        ],
+    )
+
+    golden = build_golden_set(reviewed_path)
+
+    assert len(golden) == 1
+    assert golden[0].headline.headline == "Orlen podaje wyniki"

@@ -27,6 +27,11 @@ from fin_ai_lab.market_pulse.sources.fred import FredClient
 from fin_ai_lab.market_pulse.sources.nbp import NbpClient
 from fin_ai_lab.market_pulse.sources.news import fetch_news
 from fin_ai_lab.market_pulse.state import changes_since_previous, load_previous, save_current
+from fin_ai_lab.news_classifier.comparison_report import (
+    SUITES,
+    build_model_report,
+    render_comparison_report,
+)
 from fin_ai_lab.news_classifier.corpus_store import append_labeled, load_labeled
 from fin_ai_lab.news_classifier.ingest.news_rss import collect_headlines
 from fin_ai_lab.news_classifier.labeling.progress import (
@@ -84,9 +89,12 @@ def eval_command(
     save_baseline: bool = typer.Option(False, "--save-baseline"),
     yes: bool = typer.Option(False, "--yes"),
     max_cost: str | None = typer.Option(None, "--max-cost"),
+    provider: str = typer.Option(
+        "gemini", "--provider", help="LLM provider for suites whose target calls an LLM."
+    ),
 ) -> None:
     settings = Settings()
-    llm_client = _build_llm_client(settings)
+    llm_client = _build_llm_client(settings, provider)
     prompts = PromptRegistry()
     prompts.load_dir(PORTFOLIO_PROMPTS_DIR)
     prompts.load_dir(SECTOR_PROMPTS_DIR)
@@ -404,6 +412,29 @@ def news_classifier_score_review(
     # REQ-011 / docs/EVALS.md bar.
     if report["sentiment_kappa"] < 0.6 or report["event_type_kappa"] < 0.6:
         typer.echo("Below 0.6 kappa bar — teacher labels/prompt need work before training on them.")
+
+
+@news_classifier_app.command("compare-report")
+def news_classifier_compare_report(
+    output: Path = typer.Option(
+        Path("docs/specs/p4-news-classifier/reports/p4-s7-comparison.md"), "--output"
+    ),
+) -> None:
+    """P4-S7 (REQ-020): reads the latest eval run for each of the four
+    p4-classifier-* suites and writes one comparison report. Run
+    'fin-ai-lab eval p4-classifier-<model> --split test' for majority,
+    tfidf, few-shot and herbert first."""
+    reports = []
+    for model in SUITES:
+        try:
+            reports.append(build_model_report(model))
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_comparison_report(reports), encoding="utf-8")
+    typer.echo(f"Wrote comparison report to {output}")
 
 
 @investment_committee_app.command("analyze")

@@ -43,6 +43,11 @@ ml = ["numpy>=2.0", "scikit-learn>=1.5"]
 # compatible REST), no native extension, no AVX2 risk (same reasoning as
 # "mcp" above).
 groq = ["groq>=1.7.0"]
+# torch (CPU) verified on this machine 2026-09-19 (docs/ENVIRONMENT.md) —
+# no AVX2 issue. Local inference of the P4-S4 HerBERT checkpoints for the
+# P4-S7 comparison report (REQ-021: latency/cost measured on the real
+# target hardware, not assumed from Colab GPU).
+herbert = ["torch>=2.14", "transformers>=5.0"]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"
