@@ -10,10 +10,12 @@ from fin_ai_lab.investment_committee.models import Brief, CommitteeReport
 from fin_ai_lab.investment_committee.subagents.fundamental import run_fundamental_brief
 from fin_ai_lab.investment_committee.subagents.macro import run_macro_brief
 from fin_ai_lab.investment_committee.subagents.sentiment import run_sentiment_brief
+from fin_ai_lab.investment_committee.subagents.stress import run_stress_brief
 from fin_ai_lab.investment_committee.tools import build_tools
 from fin_ai_lab.market_pulse.sources.fred import FredClient
 from fin_ai_lab.market_pulse.sources.nbp import NbpClient
 from fin_ai_lab.portfolio_xray.canonical import Portfolio
+from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient
 
 _NO_ADVICE_NOTICE = (
     "Powyższe zestawienie ma charakter wyłącznie informacyjny i nie stanowi rekomendacji "
@@ -41,12 +43,14 @@ async def run_committee(
     prompt_registry: PromptRegistry,
     model: str,
     budget: BudgetGuard,
+    fx_client: NbpFxClient | None = None,
 ) -> CommitteeReport:
-    """P5-S2: orchestrator-workers, same pattern as P3-S4's `build_brief` —
-    dispatches the three perspective subagents in parallel, then assembles
+    """P5-S2/S3: orchestrator-workers, same pattern as P3-S4's `build_brief`
+    — dispatches the four perspective subagents in parallel, then assembles
     the report in code (REQ-004: the supervisor never recomputes a number a
     subagent already produced, it only concatenates their conclusions and
-    flags disagreement)."""
+    flags disagreement). The stress ("Kwant") subagent makes no LLM call at
+    all (REQ-030) — its budget cost is always zero."""
     if not budget.check(Decimal(0)):
         return CommitteeReport(
             portfolio_id=portfolio_id,
@@ -72,6 +76,7 @@ async def run_committee(
                 tools_by_name["get_news_sentiment"],
                 llm_client, prompt_registry, model, portfolio_id, budget,
             ),
+            run_stress_brief(portfolio, fx_client or NbpFxClient()),
         )
     )
 
