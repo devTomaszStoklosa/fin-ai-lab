@@ -21,6 +21,11 @@ class _FakeNbpClient:
         return None
 
 
+class _FakeFxClient:
+    async def mid_rate(self, currency: str, as_of):
+        return Decimal(1)
+
+
 def _prompt_registry() -> PromptRegistry:
     registry = PromptRegistry()
     registry.load_dir(PROMPTS_DIR)
@@ -61,13 +66,17 @@ async def test_run_committee_dispatches_three_subagents_and_assembles_report() -
     report = await run_committee(
         _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
         llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        fx_client=_FakeFxClient(),
     )
 
     assert report.portfolio_id == "portfolio-1"
-    assert {brief.perspective for brief in report.briefs} == {"fundamental", "macro", "sentiment"}
-    assert len(llm_client.requests) == 3
+    assert {brief.perspective for brief in report.briefs} == {
+        "fundamental", "macro", "sentiment", "stress",
+    }
+    assert len(llm_client.requests) == 3  # stress makes no LLM call (REQ-030)
     assert budget.iterations == 3
     assert "[macro]" in report.text
+    assert "[stress]" in report.text
     assert "nie stanowi rekomendacji inwestycyjnej" in report.text
 
 
@@ -84,6 +93,7 @@ async def test_run_committee_flags_explicit_disagreement_between_perspectives() 
     report = await run_committee(
         _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
         llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        fx_client=_FakeFxClient(),
     )
 
     assert len(report.disagreements) == 1
