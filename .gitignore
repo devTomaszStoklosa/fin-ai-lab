@@ -19,6 +19,9 @@ checkpoints/
 *.gguf
 *.safetensors
 
+# Local dev tools cloned for conversion scripts (not this repo's own code)
+tools/
+
 # Eval runs and traces (may contain private data and full model outputs)
 evals/runs/
 traces/
