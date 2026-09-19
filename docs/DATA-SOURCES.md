@@ -33,7 +33,7 @@ Werdykty licencyjne dla źródeł wspólnych z Analizoteką pochodzą z jej plan
 | FinancialPhraseBank | zdania finansowe EN z sentymentem | nie | — | tak | **nie** (CC BY-NC-SA 3.0) | P4 |
 | FiQA | sentyment i QA finansowe EN | nie | — | tak | sprawdź licencję | P4 |
 | HerBERT (`allegro/herbert-base-cased`) | encoder PL do fine-tuningu (P4-S4) | nie | — | tak | **CC BY 4.0** (zweryfikowane na kartach modelu HF, 2026-09-19) | P4 |
-| Checkpointy Bielik | model bazowy do fine-tuningu (P4-S5) | nie | — | tak | licencja zależy od checkpointu — czytaj model card przed użyciem | P4 |
+| `speakleash/Bielik-1.5B-v3.0-Instruct` | model bazowy do fine-tuningu LoRA/QLoRA (P4-S5) | nie | — | tak | **Apache 2.0** (zweryfikowane na karcie modelu HF, 2026-09-19) — dozwolone użycie komercyjne i redystrybucja dostrojonych wersji | P4 |
 
 ### FRED — licencja per seria
 
