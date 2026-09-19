@@ -475,7 +475,11 @@ def investment_committee_analyze(
 
     fred_client = FredClient(settings.require_fred_api_key())
     nbp_client = NbpClient()
-    budget = BudgetGuard(budget_usd=Decimal(budget_usd), max_iterations=max_iterations)
+    budget = BudgetGuard(
+        budget_usd=Decimal(budget_usd),
+        max_iterations=max_iterations,
+        on_budget_exceeded=lambda: _confirm_budget_override(yes),
+    )
 
     def approve(config: ParserConfig, positions: list[Position]) -> bool:
         return _confirm_new_config(config, positions, yes)
@@ -529,6 +533,16 @@ def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bo
     if yes:
         return True
     return typer.confirm("Save this configuration and continue?")
+
+
+def _confirm_budget_override(yes: bool) -> bool:
+    """P5-S6, REQ-020: the committee's budget/iteration cap was hit —
+    ask before continuing rather than just stopping (01-story.md's open
+    question #3, answered: CLI prompt). `--yes` auto-approves, same as
+    `_confirm_new_config` above."""
+    if yes:
+        return True
+    return typer.confirm("Budżet komitetu przekroczony. Kontynuować mimo to?")
 
 
 def _build_llm_client(settings: Settings, provider: str = "gemini") -> LlmClient:

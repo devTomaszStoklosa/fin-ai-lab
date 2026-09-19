@@ -63,4 +63,4 @@ Should, po P1–P4 (do testów wystarczą atrapy ich wyników). MVP cut line: P5
 |---|---|---|---|
 | 1 | Portfele testowe: syntetyczne (np. 10 profili) czy zanonimizowany własny? | Tomasz | przed P5-S1 |
 | 2 | Czy Managed Agents (beta) wchodzi jako dodatkowy wariant porównawczy? | Tomasz | przed P5-S7 |
-| 3 | Akceptacje human-in-the-loop: w CLI czy w prostym UI? | Tomasz | przed P5-S6 |
+| 3 | ~~Akceptacje human-in-the-loop: w CLI czy w prostym UI?~~ Odpowiedź: CLI prompt (2026-09-19) | Tomasz | przed P5-S6 — odblokowane |
