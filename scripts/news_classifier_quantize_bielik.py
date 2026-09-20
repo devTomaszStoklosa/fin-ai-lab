@@ -17,7 +17,14 @@ Prerequisites (manual, one-time):
        uv venv tools/convert-venv --python 3.12
        uv pip install --python tools/convert-venv -r \
            tools/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+       uv pip install --python tools/convert-venv "transformers==4.46.3"
    `tools/` is gitignored — local build tooling, not this repo's own code.
+2b. Apply `scripts/patches/llama_cpp_hf_vocab_score.patch` on top of the
+    fresh clone (issue #142 — upstream `LlamaHfVocab.get_token_score()`
+    is an unfinished stub that always returns -1000.0 for every token,
+    which produces empty/garbage completions for tokenizers without a
+    `tokenizer.model`, like Bielik's):
+       cd tools/llama.cpp && git apply ../../scripts/patches/llama_cpp_hf_vocab_score.patch
 3. `uv sync --extra quantized` (llama-cpp-python, peft, transformers) in
    this repo's own `.venv`, for the merge and quantize steps below.
 4. Accept `speakleash/Bielik-1.5B-v3.0-Instruct`'s access conditions and
