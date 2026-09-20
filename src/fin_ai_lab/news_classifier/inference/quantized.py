@@ -24,7 +24,10 @@ class ChatCompletionClient(Protocol):
 def load_llm(model_path: Path) -> ChatCompletionClient:
     from llama_cpp import Llama
 
-    return Llama(model_path=str(model_path), n_ctx=512, verbose=False)
+    # 512 was too small once #142's vocab-conversion fix made tokenization
+    # correct again — the real (correctly tokenized) prompt, including the
+    # ticker catalog, runs 640-670 tokens; 2048 leaves headroom to grow.
+    return Llama(model_path=str(model_path), n_ctx=2048, verbose=False)
 
 
 def classify_quantized(

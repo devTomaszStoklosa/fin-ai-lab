@@ -1,0 +1,42 @@
+diff --git a/gguf-py/gguf/vocab.py b/gguf-py/gguf/vocab.py
+index d93b94f..9d3414c 100644
+--- a/gguf-py/gguf/vocab.py
++++ b/gguf-py/gguf/vocab.py
+@@ -615,6 +615,23 @@ class LlamaHfVocab(Vocab):
+ 
+         self.fname_tokenizer = fname_tokenizer
+ 
++        # fin-ai-lab local patch (tools/ is gitignored, not upstream): the
++        # stock get_token_score() below always returned -1000.0 for every
++        # token, so llama.cpp's SPM-style Viterbi tokenizer at inference
++        # time had no signal to prefer real BPE merges over byte-fallback
++        # splitting -- it tokenizes text completely differently from how
++        # the model was trained, producing empty/garbage completions.
++        # Derive a real per-token score from the BPE merge rank instead
++        # (lower rank = more fundamental/frequent merge = less negative
++        # score, matching SentencePiece's log-probability convention).
++        vocab = self.tokenizer.get_vocab()  # ty: ignore[unresolved-attribute]
++        self._merge_rank_scores: dict[int, float] = {}
++        for rank, pair in enumerate(tokenizer_model.get('merges', [])):
++            left, right = pair if isinstance(pair, list) else pair.split(' ', 1)
++            token_id = vocab.get(left + right)
++            if token_id is not None and token_id not in self._merge_rank_scores:
++                self._merge_rank_scores[token_id] = -float(rank)
++
+     def hf_tokens(self) -> Iterable[tuple[bytes, float, gguf.TokenType]]:
+         reverse_vocab = {
+             id: encoded_tok for encoded_tok, id in self.tokenizer.get_vocab().items()  # ty: ignore[unresolved-attribute]
+@@ -642,9 +659,10 @@ class LlamaHfVocab(Vocab):
+         return gguf.TokenType.CONTROL if token_id in special_ids else gguf.TokenType.NORMAL
+ 
+     def get_token_score(self, token_id: int) -> float:
+-        # Placeholder for actual logic to determine the token's score
+-        # This needs to be implemented based on specific requirements
+-        return -1000.0  # Default score
++        # Base/unmerged pieces (present before any BPE merge) get 0.0 —
++        # the least-negative, most-preferred score, same convention as
++        # SentencePiece's base alphabet.
++        return self._merge_rank_scores.get(token_id, 0.0)
+ 
+     def added_tokens(self) -> Iterable[tuple[bytes, float, gguf.TokenType]]:
+         for text in self.added_tokens_list:
