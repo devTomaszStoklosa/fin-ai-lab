@@ -4,11 +4,13 @@ import {
   ImportFailure,
   UNKNOWN_FORMAT_ERROR,
   deletePosition,
+  fetchMetrics,
   fetchPositions,
   fetchSnapshots,
   importFile,
 } from './api'
-import type { Portfolio, Position, Snapshot } from './api'
+import type { Metrics, Portfolio, Position, Snapshot } from './api'
+import AllocationBars from './AllocationBars'
 import { trimTrailingZeros } from './format'
 import ManualPosition from './ManualPosition'
 import ProposeConfig from './ProposeConfig'
@@ -33,6 +35,7 @@ type Props = {
 function PortfolioDetail({ portfolio, onBack }: Props) {
   const [snapshots, setSnapshots] = useState<Snapshot[] | null>(null)
   const [manualPositions, setManualPositions] = useState<Position[] | null>(null)
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
   // 'new' adds a position; a Position edits that one; null shows neither.
@@ -58,8 +61,15 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
       .catch((e: Error) => setLoadError(e.message))
   }
 
+  function reloadMetrics() {
+    fetchMetrics(portfolio.id)
+      .then(setMetrics)
+      .catch((e: Error) => setLoadError(e.message))
+  }
+
   useEffect(reloadSnapshots, [portfolio.id])
   useEffect(reloadPositions, [portfolio.id])
+  useEffect(reloadMetrics, [portfolio.id])
 
   // Backend returns snapshots newest-first; the detail page shows the
   // current state (the latest one), not a stack of every past import --
@@ -73,12 +83,16 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
   function handleManualSaved() {
     setManualFormTarget(null)
     reloadPositions()
+    reloadMetrics()
   }
 
   function handleDelete(position: Position) {
     if (!window.confirm(`Usunąć pozycję „${position.instrument_name}”?`)) return
     deletePosition(portfolio.id, position.id)
-      .then(reloadPositions)
+      .then(() => {
+        reloadPositions()
+        reloadMetrics()
+      })
       .catch((e: Error) => setLoadError(e.message))
   }
 
@@ -94,6 +108,7 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
         setImportWarnings(warnings)
         setFile(null)
         reloadSnapshots()
+        reloadMetrics()
       })
       .catch((e: Error) => {
         if (e instanceof ImportFailure) {
@@ -116,6 +131,7 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
     setShowPropose(false)
     setFile(null)
     reloadSnapshots()
+    reloadMetrics()
   }
 
   return (
@@ -133,6 +149,48 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
           )}
         </div>
       </header>
+
+      {metrics && metrics.total_value !== null && (
+        <section className="metrics">
+          <div className="portfolio-value">
+            <div className="value-amount">
+              {trimTrailingZeros(metrics.total_value)} {metrics.base_currency}
+            </div>
+            {latestSnapshot && (
+              <div className="muted small">
+                wycena na {latestSnapshot.valuation_date} · waluta bazowa {metrics.base_currency}
+              </div>
+            )}
+          </div>
+
+          <div className="metric-cards">
+            <div className="metric-card">
+              <div className="muted small">Liczba pozycji</div>
+              <div className="mono metric-value">{metrics.position_count}</div>
+            </div>
+            <div className="metric-card">
+              <div className="muted small">Koncentracja (HHI)</div>
+              <div className="mono metric-value">{metrics.hhi}</div>
+            </div>
+            <div className="metric-card">
+              <div className="muted small">Efektywna liczba pozycji</div>
+              <div className="mono metric-value">{metrics.effective_positions}</div>
+            </div>
+            <div className="metric-card">
+              <div className="muted small">Udział top-5</div>
+              <div className="mono metric-value">{metrics.top5_share}%</div>
+            </div>
+          </div>
+
+          <div className="allocation-grid">
+            <AllocationBars
+              title="Alokacja wg klasy aktywów"
+              allocation={metrics.allocation_by_asset_class}
+            />
+            <AllocationBars title="Ekspozycja walutowa" allocation={metrics.allocation_by_currency} />
+          </div>
+        </section>
+      )}
 
       <div className="detail-actions">
         <form className="import-form" onSubmit={handleImport}>

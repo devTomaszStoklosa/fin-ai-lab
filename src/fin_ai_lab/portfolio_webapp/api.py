@@ -20,6 +20,7 @@ from fin_ai_lab.portfolio_webapp import db, repository
 from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow, SnapshotRow
 from fin_ai_lab.portfolio_webapp.schemas import (
     ImportResponse,
+    MetricsOut,
     PortfolioCreate,
     PortfolioOut,
     PositionCreate,
@@ -31,6 +32,8 @@ from fin_ai_lab.portfolio_webapp.schemas import (
 )
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
+from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
+from fin_ai_lab.portfolio_xray.metrics.weights import compute_weights
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.correction import (
     CorrectionLoopError,
@@ -40,6 +43,8 @@ from fin_ai_lab.portfolio_xray.parsers.reader import read_xlsx_sheets
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
 from fin_ai_lab.portfolio_xray.privacy.injection import flag_suspicious_cells
 from fin_ai_lab.portfolio_xray.service import import_file
+
+BASE_CURRENCY = "PLN"  # matches canonical.Portfolio.base_currency (Literal["PLN"])
 
 # Same default as the CLI (cli.py's `import` command) -- not exposed as a
 # web UI option, this tool doesn't need model choice as a user-facing knob.
@@ -74,6 +79,11 @@ def create_app(
     # exercising it must inject a ParserRegistry(parsers_dir=tmp_path) or it
     # would write a real YAML file into the source tree.
     parser_registry_factory: Callable[[], ParserRegistry] = ParserRegistry,
+    # Same reasoning as openfigi_client_factory -- NbpFxClient hits a real
+    # HTTP API. PLN short-circuits without any network call (fx.py's
+    # mid_rate), which is all every position in this app has today, but the
+    # factory keeps the DI pattern consistent with the app's other clients.
+    fx_client_factory: Callable[[], NbpFxClient] = NbpFxClient,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -306,6 +316,59 @@ def create_app(
         _require_manual_position(connection, portfolio_id, position_id)
         repository.delete_position(connection, position_id)
 
+    @app.get("/api/portfolios/{portfolio_id}/metrics", response_model=MetricsOut)
+    async def get_metrics(
+        portfolio_id: UUID,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> MetricsOut:
+        if repository.get_portfolio(connection, portfolio_id) is None:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+
+        rows = _current_position_rows(connection, portfolio_id)
+        fx_client = fx_client_factory()
+        positions_with_base_value = [
+            (
+                position,
+                await _base_currency_value(position, fx_client),
+            )
+            for position in (_position_row_to_domain(row) for row in rows)
+        ]
+
+        try:
+            weights = compute_weights(positions_with_base_value)
+        except ValueError:
+            # Empty portfolio, or every position values at 0 -- nothing to
+            # divide by, not a server error.
+            return MetricsOut(
+                position_count=len(rows),
+                total_value=None,
+                base_currency=BASE_CURRENCY,
+                hhi=None,
+                effective_positions=None,
+                top5_share=None,
+                allocation_by_asset_class={},
+                allocation_by_currency={},
+            )
+
+        total_value = sum((w.base_currency_value for w in weights.weighted_positions), Decimal(0))
+        return MetricsOut(
+            position_count=len(rows),
+            total_value=total_value,
+            base_currency=BASE_CURRENCY,
+            hhi=weights.hhi.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
+            effective_positions=weights.effective_positions.quantize(
+                Decimal("0.1"), rounding=ROUND_HALF_UP
+            ),
+            top5_share=_as_percent(weights.top5_share),
+            allocation_by_asset_class={
+                key: _as_percent(value)
+                for key, value in weights.allocation_by_asset_class.items()
+            },
+            allocation_by_currency={
+                key: _as_percent(value) for key, value in weights.allocation_by_currency.items()
+            },
+        )
+
     return app
 
 
@@ -352,6 +415,21 @@ def _require_manual_position(
         raise HTTPException(status_code=404, detail="Position not found")
 
     return portfolio
+
+
+def _current_position_rows(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID
+) -> list[PositionRow]:
+    # Same "current state" as PortfolioDetail.tsx's own merge (S4): the
+    # latest real import, if any, plus every manually added position.
+    rows: list[PositionRow] = []
+    snapshots = repository.list_snapshots(connection, portfolio_id)
+    if snapshots:
+        rows.extend(repository.list_positions(connection, snapshots[0][0]))
+    manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
+    if manual_snapshot is not None:
+        rows.extend(repository.list_positions(connection, manual_snapshot[0]))
+    return rows
 
 
 async def _build_manual_position(
@@ -557,6 +635,64 @@ def _return_pct(
     return ((market_value - cost_basis) / cost_basis * 100).quantize(
         Decimal("0.1"), rounding=ROUND_HALF_UP
     )
+
+
+def _position_row_to_domain(row: PositionRow) -> Position:
+    (
+        _id,
+        _snapshot_id,
+        broker,
+        account_type,
+        instrument_name,
+        isin,
+        symbol,
+        asset_class,
+        quantity,
+        avg_cost,
+        cost_currency,
+        market_value,
+        market_currency,
+        valuation_date,
+        resolution_status,
+        figi,
+        ticker,
+        exchange_code,
+        identification_rule,
+    ) = row
+    return Position(
+        broker=broker,
+        account_type=account_type,
+        instrument_name=instrument_name,
+        isin=isin,
+        symbol=symbol,
+        asset_class=asset_class,
+        quantity=quantity,
+        avg_cost=avg_cost,
+        cost_currency=cost_currency,
+        market_value=market_value,
+        market_currency=market_currency,
+        valuation_date=valuation_date,
+        resolution_status=resolution_status,
+        figi=figi,
+        ticker=ticker,
+        exchange_code=exchange_code,
+        identification_rule=identification_rule,
+    )
+
+
+async def _base_currency_value(position: Position, fx_client: NbpFxClient) -> Decimal:
+    # Mirrors report/orchestrator.py's own (module-private) _base_currency_value
+    # -- same reasoning as _flag_injection_warnings: P1-private, portfolio_webapp
+    # may only reach its public surface (docs/ARCHITECTURE.md rule 6).
+    if position.market_value is None or position.market_currency is None:
+        return Decimal(0)
+    return await convert_to_base_currency(
+        position.market_value, position.market_currency, position.valuation_date, fx_client
+    )
+
+
+def _as_percent(fraction: Decimal) -> Decimal:
+    return (fraction * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
 def _to_position_preview(position: Position) -> PositionPreviewOut:

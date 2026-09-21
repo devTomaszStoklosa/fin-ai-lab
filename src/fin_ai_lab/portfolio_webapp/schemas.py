@@ -95,3 +95,14 @@ class PositionUpdate(PositionCreate):
     # Not auto-derived on update, unlike creation -- this is what lets the
     # owner move a manual position's valuation away from cost basis later.
     market_value: Decimal = Field(ge=0)
+
+
+class MetricsOut(BaseModel):
+    position_count: int
+    total_value: Decimal | None
+    base_currency: str
+    hhi: Decimal | None
+    effective_positions: Decimal | None
+    top5_share: Decimal | None
+    allocation_by_asset_class: dict[str, Decimal]
+    allocation_by_currency: dict[str, Decimal]
