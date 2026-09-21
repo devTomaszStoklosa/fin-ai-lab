@@ -63,3 +63,25 @@ def build_synthetic_xtb_workbook(extra_note: str | None = None) -> bytes:
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+# Valid ISIN checksums for a made-up "SYNTH" issuer — not a real company,
+# picked only to satisfy canonical.Position's checksum validation.
+SYNTH_A_ISIN = "PLSYNTH00016"
+SYNTH_B_ISIN = "PLSYNTH00024"
+
+
+def build_synthetic_bossa_csv() -> bytes:
+    """Shaped like the real Bossa "historia operacji" export (hisPW.csv):
+    semicolon-delimited, cp1250, one row per transaction, "-" column carries
+    K (buy) / S (sell). SYNTHA is bought then partly sold (stays open,
+    weighted-average cost updates); SYNTHB is bought then fully sold (closes
+    to zero, must not appear in the resulting positions)."""
+    rows = [
+        "data;papier;isin;ilość;-;cena;wartość;prowizja;po prowizji;waluta",
+        f"01.01.2026 10:00:00;SYNTHA;{SYNTH_A_ISIN};10;K;100,00;1000,00;5,00;1005,00;PLN",
+        f"05.01.2026 10:00:00;SYNTHA;{SYNTH_A_ISIN};4;S;110,00;440,00;2,00;438,00;PLN",
+        f"01.01.2026 11:00:00;SYNTHB;{SYNTH_B_ISIN};5;K;50,00;250,00;1,00;251,00;PLN",
+        f"02.01.2026 11:00:00;SYNTHB;{SYNTH_B_ISIN};5;S;60,00;300,00;1,00;299,00;PLN",
+    ]
+    return ("\r\n".join(rows) + "\r\n").encode("cp1250")

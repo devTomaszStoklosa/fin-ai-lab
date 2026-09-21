@@ -9,8 +9,12 @@ from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.identification.openfigi import Identification
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
-from fin_ai_lab.portfolio_xray.service import import_file
-from portfolio_xray._fixtures import build_synthetic_xtb_workbook
+from fin_ai_lab.portfolio_xray.service import import_bossa_csv, import_file
+from portfolio_xray._fixtures import (
+    SYNTH_A_ISIN,
+    build_synthetic_bossa_csv,
+    build_synthetic_xtb_workbook,
+)
 
 
 class _StubOpenFigiClient:
@@ -207,3 +211,45 @@ async def test_import_file_unknown_format_rejected_by_owner_is_not_saved(tmp_pat
     assert result.positions == []
     assert result.errors == ["New parser configuration was not approved"]
     assert list(tmp_path.glob("*.yaml")) == []
+
+
+async def test_import_bossa_csv_aggregates_and_resolves_identification() -> None:
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG-SYNTH",
+            ticker="SYNA.WA",
+            exchange_code="WSE",
+            identification_rule="only listing in currency",
+        )
+    )
+
+    result = await import_bossa_csv(
+        build_synthetic_bossa_csv(),
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        openfigi_client=stub,
+        broker_market="WSE",
+    )
+
+    assert result.errors == []
+    assert len(result.positions) == 1
+    position = result.positions[0]
+    assert position.isin == SYNTH_A_ISIN
+    assert position.resolution_status == "resolved"
+    assert position.ticker == "SYNA.WA"
+    assert stub.calls == [(SYNTH_A_ISIN, "PLN", "WSE")]
+
+
+async def test_import_bossa_csv_reports_parse_errors() -> None:
+    header = "data;papier;isin;ilość;-;cena;wartość;prowizja;po prowizji;waluta"
+    bad_row = f"01.01.2026 10:00:00;SYNTHA;{SYNTH_A_ISIN};10;X;100,00;1000,00;5,00;1005,00;PLN"
+    payload = (header + "\r\n" + bad_row + "\r\n").encode("cp1250")
+
+    result = await import_bossa_csv(
+        payload, valuation_date=date(2026, 9, 15), account_type="regular"
+    )
+
+    assert result.positions == []
+    assert len(result.errors) == 1
+    assert "Unknown transaction side" in result.errors[0]

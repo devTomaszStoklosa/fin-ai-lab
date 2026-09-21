@@ -6,6 +6,11 @@ from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.importer import ImportResult, deduplicate_positions, import_xlsx
+from fin_ai_lab.portfolio_xray.ledger import (
+    attach_current_market_values,
+    parse_bossa_csv,
+    transactions_to_positions,
+)
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.correction import (
     CorrectionLoopError,
@@ -84,6 +89,35 @@ async def import_file(
     merged, dedup_warnings = deduplicate_positions(positions)
     merged = await _resolve_identifications(merged, openfigi_client, broker_market)
     return ImportResult(positions=merged, errors=[], warnings=dedup_warnings + injection_flags)
+
+
+async def import_bossa_csv(
+    file_bytes: bytes,
+    *,
+    valuation_date: date,
+    account_type: AccountType,
+    openfigi_client: OpenFigiClient | None = None,
+    broker_market: str | None = None,
+) -> ImportResult:
+    """Bossa's own path, parallel to import_file: its export is a
+    transaction ledger, not a position snapshot (no registry, no LLM
+    correction loop — those assume one row maps to one position), so
+    positions come from replaying the whole ledger deterministically
+    (ledger.py) rather than from column mapping."""
+    try:
+        transactions = parse_bossa_csv(file_bytes)
+    except ValueError as exc:
+        return ImportResult(positions=[], errors=[str(exc)], warnings=[])
+
+    positions, errors = transactions_to_positions(
+        transactions, account_type=account_type, valuation_date=valuation_date
+    )
+    if errors:
+        return ImportResult(positions=[], errors=errors, warnings=[])
+
+    positions = await _resolve_identifications(positions, openfigi_client, broker_market)
+    positions = attach_current_market_values(positions)
+    return ImportResult(positions=positions, errors=[], warnings=[])
 
 
 async def _resolve_identifications(
