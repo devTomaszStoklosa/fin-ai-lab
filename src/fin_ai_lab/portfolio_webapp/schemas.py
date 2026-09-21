@@ -106,3 +106,12 @@ class MetricsOut(BaseModel):
     top5_share: Decimal | None
     allocation_by_asset_class: dict[str, Decimal]
     allocation_by_currency: dict[str, Decimal]
+
+
+class ReportOut(BaseModel):
+    id: UUID
+    snapshot_id: UUID
+    generated_at: datetime
+    model: str
+    cost_usd: Decimal
+    content_md: str

@@ -525,3 +525,35 @@
 .allocation-fill {
   height: 100%;
 }
+
+.report {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.report-header h2 {
+  margin: 0;
+}
+
+.report-content {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.report-disclaimer {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
