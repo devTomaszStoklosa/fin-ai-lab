@@ -56,8 +56,10 @@ quantized = ["llama-cpp-python>=0.3", "peft>=0.13", "transformers>=5.0"]
 # duckdb ships prebuilt wheels (no local compile like llama-cpp-python) but
 # is still a native extension -- test-import first (tests/test_environment.py)
 # before betting portfolio-webapp's persistence on it, same discipline as
-# every other native dependency above. fastapi/uvicorn are pure Python.
-ui = ["fastapi>=0.120.0", "uvicorn[standard]>=0.38.0", "duckdb>=1.4.0"]
+# every other native dependency above. fastapi/uvicorn/python-multipart are
+# pure Python; python-multipart is FastAPI's required (not bundled) dependency
+# for File()/Form() request parsing (portfolio-webapp-S2 file upload).
+ui = ["fastapi>=0.120.0", "uvicorn[standard]>=0.38.0", "duckdb>=1.4.0", "python-multipart>=0.0.20"]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"

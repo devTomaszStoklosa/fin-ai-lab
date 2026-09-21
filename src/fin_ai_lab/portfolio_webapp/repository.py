@@ -1,15 +1,49 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import duckdb
 
+from fin_ai_lab.portfolio_xray.canonical import Position
+
 PortfolioRow = tuple[uuid.UUID, str, str | None, str | None, datetime]
+SnapshotRow = tuple[uuid.UUID, uuid.UUID, str, date, datetime, date | None, date | None]
+PositionRow = tuple[
+    uuid.UUID,  # id
+    uuid.UUID,  # snapshot_id
+    str,  # broker
+    str,  # account_type
+    str,  # instrument_name
+    str | None,  # isin
+    str | None,  # symbol
+    str,  # asset_class
+    object,  # quantity (Decimal)
+    object | None,  # avg_cost (Decimal)
+    str | None,  # cost_currency
+    object | None,  # market_value (Decimal)
+    str | None,  # market_currency
+    date,  # valuation_date
+    str,  # resolution_status
+    str | None,  # figi
+    str | None,  # ticker
+    str | None,  # exchange_code
+    str | None,  # identification_rule
+]
 
 
 def list_portfolios(connection: duckdb.DuckDBPyConnection) -> list[PortfolioRow]:
     return connection.execute(
         "SELECT id, name, broker, account_type, created_at FROM portfolios ORDER BY created_at"
     ).fetchall()
+
+
+def get_portfolio(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: uuid.UUID
+) -> PortfolioRow | None:
+    rows = connection.execute(
+        "SELECT id, name, broker, account_type, created_at FROM portfolios WHERE id = ?",
+        [portfolio_id],
+    ).fetchall()
+    return rows[0] if rows else None
 
 
 def create_portfolio(
@@ -26,3 +60,91 @@ def create_portfolio(
         [portfolio_id, name, broker, account_type, created_at],
     )
     return (portfolio_id, name, broker, account_type, created_at)
+
+
+def create_snapshot(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    portfolio_id: uuid.UUID,
+    broker: str,
+    valuation_date: date,
+    source_file_date_min: date | None = None,
+    source_file_date_max: date | None = None,
+) -> SnapshotRow:
+    snapshot_id = uuid.uuid4()
+    imported_at = datetime.now(UTC)
+    connection.execute(
+        "INSERT INTO portfolio_snapshots VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            snapshot_id,
+            portfolio_id,
+            broker,
+            valuation_date,
+            imported_at,
+            source_file_date_min,
+            source_file_date_max,
+        ],
+    )
+    return (
+        snapshot_id,
+        portfolio_id,
+        broker,
+        valuation_date,
+        imported_at,
+        source_file_date_min,
+        source_file_date_max,
+    )
+
+
+def insert_positions(
+    connection: duckdb.DuckDBPyConnection, *, snapshot_id: uuid.UUID, positions: list[Position]
+) -> None:
+    for position in positions:
+        connection.execute(
+            "INSERT INTO positions VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                uuid.uuid4(),
+                snapshot_id,
+                position.broker,
+                position.account_type,
+                position.instrument_name,
+                position.isin,
+                position.symbol,
+                position.asset_class,
+                position.quantity,
+                position.avg_cost,
+                position.cost_currency,
+                position.market_value,
+                position.market_currency,
+                position.valuation_date,
+                position.resolution_status,
+                position.figi,
+                position.ticker,
+                position.exchange_code,
+                position.identification_rule,
+            ],
+        )
+
+
+def list_snapshots(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: uuid.UUID
+) -> list[SnapshotRow]:
+    return connection.execute(
+        "SELECT id, portfolio_id, broker, valuation_date, imported_at, "
+        "source_file_date_min, source_file_date_max FROM portfolio_snapshots "
+        "WHERE portfolio_id = ? ORDER BY imported_at DESC",
+        [portfolio_id],
+    ).fetchall()
+
+
+def list_positions(
+    connection: duckdb.DuckDBPyConnection, snapshot_id: uuid.UUID
+) -> list[PositionRow]:
+    return connection.execute(
+        "SELECT id, snapshot_id, broker, account_type, instrument_name, isin, symbol, "
+        "asset_class, quantity, avg_cost, cost_currency, market_value, market_currency, "
+        "valuation_date, resolution_status, figi, ticker, exchange_code, identification_rule "
+        "FROM positions WHERE snapshot_id = ?",
+        [snapshot_id],
+    ).fetchall()

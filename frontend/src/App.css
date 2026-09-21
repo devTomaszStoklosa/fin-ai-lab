@@ -88,6 +88,15 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card:hover {
+  border-color: var(--accent);
 }
 
 .badges {
@@ -153,4 +162,135 @@
   border-radius: 10px;
   padding: 10px 16px;
   cursor: pointer;
+}
+
+.back-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 16px;
+  font: 500 13px/1 'IBM Plex Sans', sans-serif;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.back-link:hover {
+  color: var(--accent);
+}
+
+.detail-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.detail-header h1 {
+  font-size: 26px;
+}
+
+.import-form {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+  margin-bottom: 40px;
+}
+
+.import-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.import-form input {
+  font: 400 14px/1.4 'IBM Plex Sans', sans-serif;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.import-form button {
+  align-self: flex-start;
+  font: 500 14px/1 'IBM Plex Sans', sans-serif;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.import-form button:disabled {
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
+
+.banner {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.banner p {
+  margin: 0;
+}
+
+.banner p + p {
+  margin-top: 4px;
+}
+
+.banner-error {
+  background: #fbeae7;
+  color: var(--loss);
+}
+
+.banner-warning {
+  background: #fdf3e3;
+  color: #8a5a12;
+}
+
+.snapshot {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.snapshot-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.positions {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.positions th,
+.positions td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.positions th {
+  color: var(--ink-soft);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

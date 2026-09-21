@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -16,3 +17,40 @@ class PortfolioOut(BaseModel):
     broker: str | None
     account_type: str | None
     created_at: datetime
+
+
+class PositionOut(BaseModel):
+    id: UUID
+    broker: str
+    account_type: str
+    instrument_name: str
+    isin: str | None
+    symbol: str | None
+    asset_class: str
+    quantity: Decimal
+    avg_cost: Decimal | None
+    cost_currency: str | None
+    market_value: Decimal | None
+    market_currency: str | None
+    valuation_date: date
+    resolution_status: str
+    figi: str | None
+    ticker: str | None
+    exchange_code: str | None
+    identification_rule: str | None
+
+
+class SnapshotOut(BaseModel):
+    id: UUID
+    portfolio_id: UUID
+    broker: str
+    valuation_date: date
+    imported_at: datetime
+    source_file_date_min: date | None
+    source_file_date_max: date | None
+    positions: list[PositionOut]
+
+
+class ImportResponse(BaseModel):
+    snapshot: SnapshotOut
+    warnings: list[str]

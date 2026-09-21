@@ -631,6 +631,7 @@ rag = [
 ui = [
     { name = "duckdb" },
     { name = "fastapi" },
+    { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -659,6 +660,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'quantized'", specifier = ">=0.13" },
     { name = "pydantic-settings", specifier = ">=2.15.0" },
     { name = "pypdf", marker = "extra == 'rag'", specifier = ">=5.0.0" },
+    { name = "python-multipart", marker = "extra == 'ui'", specifier = ">=0.0.20" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.5" },
     { name = "torch", marker = "extra == 'herbert'", specifier = ">=2.14" },

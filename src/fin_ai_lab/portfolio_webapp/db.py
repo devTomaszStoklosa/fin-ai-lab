@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS positions (
     resolution_status TEXT NOT NULL,
     figi TEXT,
     ticker TEXT,
-    exchange_code TEXT
+    exchange_code TEXT,
+    identification_rule TEXT
 );
 
 -- Bossa (S8) only; dedup_hash is the full-row hash from ledger.py::dedup_key.
@@ -84,9 +85,17 @@ CREATE TABLE IF NOT EXISTS aggregators (
 );
 """
 
+# CREATE TABLE IF NOT EXISTS only applies to tables that don't exist yet, so a
+# column added to an already-created table (e.g. this file on a machine that
+# ran an earlier slice) needs its own idempotent statement here.
+MIGRATIONS = """
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS identification_rule TEXT;
+"""
+
 
 def connect(db_path: Path = DEFAULT_DB_PATH) -> duckdb.DuckDBPyConnection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = duckdb.connect(str(db_path))
     connection.execute(SCHEMA)
+    connection.execute(MIGRATIONS)
     return connection
