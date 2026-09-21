@@ -294,3 +294,79 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+.propose-config {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+  margin-bottom: 40px;
+}
+
+.propose-form label,
+.propose-config h3 {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.propose-config h3 {
+  font: 600 15px/1.3 'Fraunces', Georgia, serif;
+  color: var(--ink);
+}
+
+.propose-form input {
+  font: 400 14px/1.4 'IBM Plex Sans', sans-serif;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.propose-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.propose-actions button {
+  font: 500 14px/1 'IBM Plex Sans', sans-serif;
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.propose-actions button[type='submit'],
+.propose-actions button:first-child {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+}
+
+.propose-actions button:disabled {
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.mapping-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
