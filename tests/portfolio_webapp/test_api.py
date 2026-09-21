@@ -1,3 +1,4 @@
+import json
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -11,7 +12,9 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 from portfolio_xray._fixtures import build_synthetic_xtb_workbook  # noqa: E402
 
+from fin_ai_lab.core.llm.fake import FakeLlmClient  # noqa: E402
 from fin_ai_lab.portfolio_webapp.api import create_app  # noqa: E402
+from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry  # noqa: E402
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -22,6 +25,52 @@ def _build_unrecognized_workbook() -> bytes:
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+def _build_new_broker_workbook() -> bytes:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Positions"
+    sheet.append(["Name", "Qty", "Price"])
+    sheet.append(["Widget Co", 10, "5.5"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _proposal_json(**overrides: object) -> str:
+    body = {
+        "sheet_name": "Positions",
+        "header_row": 1,
+        "row_filter": None,
+        "expected_headers": ["Name", "Qty", "Price"],
+        "column_mapping": [
+            {"file_header": "Name", "field": "instrument_name"},
+            {"file_header": "Qty", "field": "quantity"},
+            {"file_header": "Price", "field": "avg_cost"},
+        ],
+        "number_format": "en",
+        "date_format": "%Y-%m-%d",
+        "encoding": "utf-8",
+        "delimiter": None,
+    }
+    body.update(overrides)
+    return json.dumps(body)
+
+
+def _client_with_fake_llm(tmp_path: Path, responses: dict[str, str]) -> TestClient:
+    # Own isolated parsers dir, not the default (real, checked-in) one --
+    # /import/approve calls registry.save(), which must never write into
+    # the actual source tree from a test.
+    parsers_dir = tmp_path / "parsers"
+    parsers_dir.mkdir()
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: None,
+        llm_client_factory=lambda: FakeLlmClient(responses),
+        parser_registry_factory=lambda: ParserRegistry(parsers_dir=parsers_dir),
+    )
+    return TestClient(app)
 
 
 @pytest.fixture
@@ -162,3 +211,118 @@ def test_snapshots_start_empty_for_new_portfolio(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_propose_import_config_returns_preview_without_saving(tmp_path: Path) -> None:
+    with _client_with_fake_llm(tmp_path, {"propose_config": _proposal_json()}) as client:
+        portfolio_id = _create_portfolio(client, broker="newbroker")
+
+        response = client.post(
+            f"/api/portfolios/{portfolio_id}/import/propose",
+            files={"file": ("positions.xlsx", _build_new_broker_workbook(), XLSX_CONTENT_TYPE)},
+            data={"broker": "newbroker", "valuation_date": "2026-09-20"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["config"]["broker"] == "newbroker"
+        assert body["config"]["column_mapping"] == {
+            "Name": "instrument_name",
+            "Qty": "quantity",
+            "Price": "avg_cost",
+        }
+        assert len(body["positions"]) == 1
+        assert body["positions"][0]["instrument_name"] == "Widget Co"
+        assert "id" not in body["positions"][0]
+
+        # Nothing persisted: no snapshot, and the proposed config was never
+        # written to the registry (next_version would still say 1).
+        assert client.get(f"/api/portfolios/{portfolio_id}/snapshots").json() == []
+        assert ParserRegistry(parsers_dir=tmp_path / "parsers").next_version("newbroker") == 1
+
+
+def test_propose_import_config_correction_loop_error(tmp_path: Path) -> None:
+    # quantity 0 fails Position validation no matter what the model proposes
+    # (mirrors tests/portfolio_xray/parsers/test_correction.py), so this
+    # always exhausts the correction loop -- a real "the model couldn't
+    # make sense of this file" case, not a plumbing bug.
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Positions"
+    sheet.append(["Name", "Qty", "Price"])
+    sheet.append(["Widget Co", 0, "5.5"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    with _client_with_fake_llm(tmp_path, {"propose_config": _proposal_json()}) as client:
+        portfolio_id = _create_portfolio(client, broker="newbroker")
+
+        response = client.post(
+            f"/api/portfolios/{portfolio_id}/import/propose",
+            files={"file": ("positions.xlsx", buffer.getvalue(), XLSX_CONTENT_TYPE)},
+            data={"broker": "newbroker", "valuation_date": "2026-09-20"},
+        )
+
+        assert response.status_code == 422
+        assert "still invalid" in response.json()["detail"]["errors"][0]
+
+
+def test_propose_import_config_for_missing_portfolio_returns_404(tmp_path: Path) -> None:
+    with _client_with_fake_llm(tmp_path, {"propose_config": _proposal_json()}) as client:
+        response = client.post(
+            f"/api/portfolios/{uuid.uuid4()}/import/propose",
+            files={"file": ("positions.xlsx", _build_new_broker_workbook(), XLSX_CONTENT_TYPE)},
+            data={"broker": "newbroker", "valuation_date": "2026-09-20"},
+        )
+
+        assert response.status_code == 404
+
+
+def test_approve_import_config_saves_and_imports(tmp_path: Path) -> None:
+    with _client_with_fake_llm(tmp_path, {"propose_config": _proposal_json()}) as client:
+        portfolio_id = _create_portfolio(client, broker="newbroker")
+        workbook = _build_new_broker_workbook()
+
+        propose_response = client.post(
+            f"/api/portfolios/{portfolio_id}/import/propose",
+            files={"file": ("positions.xlsx", workbook, XLSX_CONTENT_TYPE)},
+            data={"broker": "newbroker", "valuation_date": "2026-09-20"},
+        )
+        proposed_config = propose_response.json()["config"]
+
+        approve_response = client.post(
+            f"/api/portfolios/{portfolio_id}/import/approve",
+            files={"file": ("positions.xlsx", workbook, XLSX_CONTENT_TYPE)},
+            data={"config": json.dumps(proposed_config), "valuation_date": "2026-09-20"},
+        )
+
+        assert approve_response.status_code == 201
+        body = approve_response.json()
+        assert body["snapshot"]["broker"] == "newbroker"
+        assert len(body["snapshot"]["positions"]) == 1
+        assert body["snapshot"]["positions"][0]["instrument_name"] == "Widget Co"
+
+        # The config is now permanent: a plain /import of the same file (no
+        # LLM involved) succeeds immediately through the ordinary S2 path.
+        plain_import = _import(client, portfolio_id, workbook, "2026-09-21")
+        assert plain_import.status_code == 201
+        assert len(plain_import.json()["snapshot"]["positions"]) == 1
+
+
+def test_approve_import_config_rejects_malformed_config(tmp_path: Path) -> None:
+    with _client_with_fake_llm(tmp_path, {"propose_config": _proposal_json()}) as client:
+        portfolio_id = _create_portfolio(client, broker="newbroker")
+
+        response = client.post(
+            f"/api/portfolios/{portfolio_id}/import/approve",
+            files={
+                "file": (
+                    "positions.xlsx",
+                    _build_new_broker_workbook(),
+                    XLSX_CONTENT_TYPE,
+                )
+            },
+            data={"config": "not json", "valuation_date": "2026-09-20"},
+        )
+
+        assert response.status_code == 422

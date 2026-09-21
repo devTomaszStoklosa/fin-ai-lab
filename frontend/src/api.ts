@@ -44,6 +44,43 @@ export type Snapshot = {
   positions: Position[]
 }
 
+export type ParserConfig = {
+  broker: string
+  version: number
+  sheet_name: string | null
+  header_row: number
+  row_filter: { require_non_empty: string[]; require_empty: string[] } | null
+  expected_headers: string[]
+  column_mapping: Record<string, string>
+  number_format: 'pl' | 'en'
+  date_format: string
+  encoding: string
+  delimiter: string | null
+}
+
+export type PositionPreview = {
+  instrument_name: string
+  isin: string | null
+  symbol: string | null
+  asset_class: string
+  quantity: string
+  avg_cost: string | null
+  cost_currency: string | null
+  market_value: string | null
+  market_currency: string | null
+}
+
+export type ProposePreview = {
+  config: ParserConfig
+  positions: PositionPreview[]
+  warnings: string[]
+}
+
+// The exact string P1's service.import_file returns when a file's format
+// signature matches no approved config -- the propose/approve flow only
+// makes sense to offer for this specific failure, not any import error.
+export const UNKNOWN_FORMAT_ERROR = 'Unknown file format'
+
 export class ImportFailure extends Error {
   errors: string[]
   warnings: string[]
@@ -92,6 +129,54 @@ export async function importFile(
   formData.append('valuation_date', valuationDate)
 
   const response = await fetch(`/api/portfolios/${portfolioId}/import`, {
+    method: 'POST',
+    body: formData,
+  })
+  const body = await response.json()
+
+  if (!response.ok) {
+    const detail = body.detail ?? {}
+    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
+  }
+  return body as { snapshot: Snapshot; warnings: string[] }
+}
+
+export async function proposeImportConfig(
+  portfolioId: string,
+  file: File,
+  broker: string,
+  valuationDate: string,
+): Promise<ProposePreview> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('broker', broker)
+  formData.append('valuation_date', valuationDate)
+
+  const response = await fetch(`/api/portfolios/${portfolioId}/import/propose`, {
+    method: 'POST',
+    body: formData,
+  })
+  const body = await response.json()
+
+  if (!response.ok) {
+    const detail = body.detail ?? {}
+    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
+  }
+  return body as ProposePreview
+}
+
+export async function approveImportConfig(
+  portfolioId: string,
+  file: File,
+  config: ParserConfig,
+  valuationDate: string,
+): Promise<{ snapshot: Snapshot; warnings: string[] }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('config', JSON.stringify(config))
+  formData.append('valuation_date', valuationDate)
+
+  const response = await fetch(`/api/portfolios/${portfolioId}/import/approve`, {
     method: 'POST',
     body: formData,
   })

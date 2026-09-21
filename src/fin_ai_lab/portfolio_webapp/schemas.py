@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
+
 
 class PortfolioCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
@@ -53,4 +55,26 @@ class SnapshotOut(BaseModel):
 
 class ImportResponse(BaseModel):
     snapshot: SnapshotOut
+    warnings: list[str]
+
+
+class PositionPreviewOut(BaseModel):
+    """A position as it would come out of a *proposed* (not yet saved)
+    parser config -- no id, no resolution/FIGI fields, since nothing has
+    been persisted or run through OpenFIGI yet."""
+
+    instrument_name: str
+    isin: str | None
+    symbol: str | None
+    asset_class: str
+    quantity: Decimal
+    avg_cost: Decimal | None
+    cost_currency: str | None
+    market_value: Decimal | None
+    market_currency: str | None
+
+
+class ProposePreview(BaseModel):
+    config: ParserConfig
+    positions: list[PositionPreviewOut]
     warnings: list[str]

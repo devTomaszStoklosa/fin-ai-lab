@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ImportFailure, fetchSnapshots, importFile } from './api'
+import { ImportFailure, UNKNOWN_FORMAT_ERROR, fetchSnapshots, importFile } from './api'
 import type { Portfolio, Snapshot } from './api'
 import { trimTrailingZeros } from './format'
+import ProposeConfig from './ProposeConfig'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -21,6 +22,7 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [importErrors, setImportErrors] = useState<string[] | null>(null)
   const [importWarnings, setImportWarnings] = useState<string[] | null>(null)
+  const [showPropose, setShowPropose] = useState(false)
 
   function reloadSnapshots() {
     fetchSnapshots(portfolio.id)
@@ -41,6 +43,7 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
     setSubmitting(true)
     setImportErrors(null)
     setImportWarnings(null)
+    setShowPropose(false)
     importFile(portfolio.id, file, valuationDate)
       .then(({ warnings }) => {
         setImportWarnings(warnings)
@@ -49,13 +52,25 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
       })
       .catch((e: Error) => {
         if (e instanceof ImportFailure) {
-          setImportErrors(e.errors)
-          setImportWarnings(e.warnings)
+          if (e.errors.length === 1 && e.errors[0] === UNKNOWN_FORMAT_ERROR) {
+            setShowPropose(true)
+            setImportWarnings(e.warnings)
+          } else {
+            setImportErrors(e.errors)
+            setImportWarnings(e.warnings)
+          }
         } else {
           setImportErrors([e.message])
         }
       })
       .finally(() => setSubmitting(false))
+  }
+
+  function handleProposeApproved(result: { snapshot: Snapshot; warnings: string[] }) {
+    setImportWarnings(result.warnings)
+    setShowPropose(false)
+    setFile(null)
+    reloadSnapshots()
   }
 
   return (
@@ -111,6 +126,16 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
           </div>
         )}
       </form>
+
+      {showPropose && file && (
+        <ProposeConfig
+          portfolioId={portfolio.id}
+          file={file}
+          valuationDate={valuationDate}
+          onApproved={handleProposeApproved}
+          onCancel={() => setShowPropose(false)}
+        />
+      )}
 
       <h2>Pozycje</h2>
       {loadError && <p className="error">{loadError}</p>}
