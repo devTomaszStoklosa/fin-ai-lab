@@ -31,6 +31,9 @@ Jako inwestor z kontami u kilku brokerów chcę wgrywać eksporty i ręcznie dod
 - AC-5: Given portfel z wcześniejszym importem, when wgrywam nowy plik tego samego brokera, then poprzedni stan nie znika — widzę kolejny punkt w czasie, nie nadpisanie.
 - AC-6: Given plik z podejrzaną komórką (P1's REQ-008), when go wgrywam przez przeglądarkę, then ostrzeżenie zostaje widoczne w interfejsie, nie ginie po drodze przez warstwę API.
 - AC-7: Given appka uruchomiona lokalnie, when ktoś próbuje się z nią połączyć spoza tej maszyny, then nie dostaje odpowiedzi — serwer nasłuchuje wyłącznie na localhost, bez uwierzytelniania jako jedynej warstwy ochrony.
+- AC-8: Given zaimportowane lub ręcznie dodane pozycje, when tworzę agregat i przypisuję do niego dowolne instrumenty i/lub inne agregaty, then widzę sumę ich wartości w walucie bazowej jako wartość agregatu.
+- AC-9: Given agregat, który pośrednio (przez zagnieżdżony agregat) obejmuje ten sam instrument dwiema różnymi ścieżkami, when patrzę na jego wartość, then instrument liczy się raz, nie wielokrotnie.
+- AC-10: Given próba dodania do agregatu jego samego — bezpośrednio albo przez łańcuch zagnieżdżeń, when zapisuję zmianę, then system odmawia z czytelnym komunikatem i cykl nie powstaje.
 
 ## Out of scope
 
@@ -42,7 +45,7 @@ Jako inwestor z kontami u kilku brokerów chcę wgrywać eksporty i ręcznie dod
 
 ## Priority
 
-Must: portfolio-webapp-S1 do portfolio-webapp-S6 (szkielet, import XTB, nieznany format, ręczne pozycje, metryki/wykresy, raport AI). Should: portfolio-webapp-S7 (historia w czasie). Bossa (portfolio-webapp-S8): zależna od osobnego ticketu w P1, nie wchodzi do MVP tego epiku.
+Must: portfolio-webapp-S1 do portfolio-webapp-S6 (szkielet, import XTB, nieznany format, ręczne pozycje, metryki/wykresy, raport AI). Should: portfolio-webapp-S7 (historia w czasie), portfolio-webapp-S9 (agregaty). Bossa (portfolio-webapp-S8): zależna od osobnego ticketu w P1, nie wchodzi do MVP tego epiku.
 
 ## Slices
 
@@ -56,6 +59,7 @@ Must: portfolio-webapp-S1 do portfolio-webapp-S6 (szkielet, import XTB, nieznany
 | portfolio-webapp-S6 Raport AI na żądanie | opis portfela bez CLI | reużycie `report/orchestrator.py`, cache per snapshot |
 | portfolio-webapp-S7 Historia w czasie | widać zmianę portfela, nie tylko bieżący stan | zapytania po snapshotach w DuckDB |
 | portfolio-webapp-S8 Import Bossy | drugi broker naprawdę działa | konsumpcja nowego ticketu P1 (ledger → pozycje) |
+| portfolio-webapp-S9 Agregaty | dowolne grupowanie instrumentów (np. łączna ekspozycja na BTC przez ETF i wprost), zagnieżdżone | drzewiaste struktury zdefiniowane przez użytkownika, wykrywanie cykli, deduplikacja przy sumowaniu |
 
 ## Dependencies and risks
 
@@ -65,6 +69,7 @@ Must: portfolio-webapp-S1 do portfolio-webapp-S6 (szkielet, import XTB, nieznany
 - yfinance: `docs/DATA-SOURCES.md` oznacza je jako tylko lokalnie, nie do produktu — appka zostaje bez uwierzytelniania i bez hostingu poza localhost także z tego powodu, nie tylko dla prostoty.
 - Dzienny limit zapytań Gemini współdzielony z P2–P5: web UI ułatwia wielokrotne „generuj raport”. `FIN_AI_LAB_MAX_RUN_COST_USD` dziś pilnuje tylko przebiegów evali, nie tej ścieżki — portfolio-webapp-S6 cache'uje ostatni raport per snapshot, żeby nie zużywać limitu bez potrzeby.
 - Nie rozszerza kodu P1 — P1 zostaje CLI-only; ten epik żyje w osobnym pakiecie (`portfolio_webapp/`) i osobnym `frontend/`, wołając wyłącznie publiczne funkcje P1.
+- Agregaty (portfolio-webapp-S9) to struktura zdefiniowana przez użytkownika, nie derywowana z danych brokera — wymaga wykrywania cykli przy zapisie (AC-10) i deduplikacji instrumentu przy sumowaniu wartości, gdy jest osiągalny dwiema ścieżkami (AC-9). Członkostwo instrumentu w agregacie musi być kluczowane stabilnym identyfikatorem (ISIN, w jego braku broker+symbol), nie id wiersza pozycji z konkretnego snapshotu — inaczej agregat przestawałby działać po każdym ponownym imporcie.
 
 ## Open questions
 
