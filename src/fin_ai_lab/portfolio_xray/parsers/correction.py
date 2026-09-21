@@ -63,7 +63,7 @@ async def propose_parser_config(
     masked_sample: str,
     feedback: str = "",
 ) -> ParserConfigProposal:
-    prompt = prompt_registry.get("propose_config", 1)
+    prompt = prompt_registry.get("propose_config", 2)
     rendered = prompt.render(sample=masked_sample, feedback=feedback)
 
     request = LlmRequest(
@@ -71,7 +71,7 @@ async def propose_parser_config(
         messages=[{"role": "user", "text": rendered}],
         response_schema=ParserConfigProposal,
         prompt_id="propose_config",
-        prompt_version=1,
+        prompt_version=2,
     )
     result = await llm_client.complete(request)
     if not isinstance(result.parsed, ParserConfigProposal):
@@ -99,7 +99,11 @@ async def propose_and_validate_config(
         proposal = await propose_parser_config(
             llm_client, prompt_registry, model, masked_sample, feedback
         )
-        config = ParserConfig(broker=broker, version=version, **proposal.model_dump())
+        proposal_data = proposal.model_dump()
+        proposal_data["column_mapping"] = {
+            entry["file_header"]: entry["field"] for entry in proposal_data["column_mapping"]
+        }
+        config = ParserConfig(broker=broker, version=version, **proposal_data)
 
         if config.sheet_name not in sheets:
             errors = [f"Sheet '{config.sheet_name}' not found in file"]

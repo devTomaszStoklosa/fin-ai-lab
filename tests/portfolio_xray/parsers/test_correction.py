@@ -27,7 +27,11 @@ def _proposal_json(**overrides: object) -> str:
         "header_row": 1,
         "row_filter": None,
         "expected_headers": ["Name", "Qty", "Price"],
-        "column_mapping": {"Name": "instrument_name", "Qty": "quantity", "Price": "avg_cost"},
+        "column_mapping": [
+            {"file_header": "Name", "field": "instrument_name"},
+            {"file_header": "Qty", "field": "quantity"},
+            {"file_header": "Price", "field": "avg_cost"},
+        ],
         "number_format": "en",
         "date_format": "%Y-%m-%d",
         "encoding": "utf-8",
