@@ -9,6 +9,14 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function returnClass(returnPct: string): string {
+  return Number(returnPct) >= 0 ? 'return-gain' : 'return-loss'
+}
+
+function formatReturn(returnPct: string): string {
+  return Number(returnPct) >= 0 ? `+${returnPct}%` : `${returnPct}%`
+}
+
 type Props = {
   portfolio: Portfolio
   onBack: () => void
@@ -18,7 +26,10 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
   const [snapshots, setSnapshots] = useState<Snapshot[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
-  const [valuationDate, setValuationDate] = useState(today())
+  // Not user-editable: avg_cost/market_value already come straight from the
+  // broker file's own columns, so asking the user to also pick a date here
+  // (S2's own addition, never part of the design) was redundant.
+  const valuationDate = today()
   const [submitting, setSubmitting] = useState(false)
   const [importErrors, setImportErrors] = useState<string[] | null>(null)
   const [importWarnings, setImportWarnings] = useState<string[] | null>(null)
@@ -99,14 +110,6 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
         </label>
-        <label>
-          Data wyceny
-          <input
-            type="date"
-            value={valuationDate}
-            onChange={(e) => setValuationDate(e.target.value)}
-          />
-        </label>
         <button type="submit" disabled={!file || submitting}>
           {submitting ? 'Importuję…' : 'Importuj'}
         </button>
@@ -163,6 +166,7 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
                   <th>Ilość</th>
                   <th>Śr. koszt</th>
                   <th>Wartość</th>
+                  <th>Zwrot</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -179,6 +183,9 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
                     <td>
                       {position.market_value ? trimTrailingZeros(position.market_value) : '—'}{' '}
                       {position.market_currency ?? ''}
+                    </td>
+                    <td className={position.return_pct === null ? '' : returnClass(position.return_pct)}>
+                      {position.return_pct === null ? '—' : formatReturn(position.return_pct)}
                     </td>
                     <td className="muted">{position.resolution_status}</td>
                   </tr>

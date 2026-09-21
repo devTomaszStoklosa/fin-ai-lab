@@ -145,6 +145,11 @@ def test_import_xtb_file_creates_snapshot_with_positions(client: TestClient) -> 
     assert len(body["snapshot"]["positions"]) == 2
     instrument_names = {p["instrument_name"] for p in body["snapshot"]["positions"]}
     assert instrument_names == {"MSCI ACWI", "Atrem"}
+    # market_value/avg_cost come straight from the fixture's "Value"/"Open
+    # price" columns -- return_pct = (market_value - qty*avg_cost) /
+    # (qty*avg_cost) * 100, rounded to 1 decimal.
+    return_by_name = {p["instrument_name"]: p["return_pct"] for p in body["snapshot"]["positions"]}
+    assert return_by_name == {"MSCI ACWI": "558.6", "Atrem": "335.1"}
 
 
 def test_import_unrecognized_workbook_returns_422_with_errors(client: TestClient) -> None:
@@ -301,6 +306,9 @@ def test_approve_import_config_saves_and_imports(tmp_path: Path) -> None:
         assert body["snapshot"]["broker"] == "newbroker"
         assert len(body["snapshot"]["positions"]) == 1
         assert body["snapshot"]["positions"][0]["instrument_name"] == "Widget Co"
+        # The proposed mapping never maps a market_value column, so there is
+        # nothing to compare avg_cost against -- return_pct stays None.
+        assert body["snapshot"]["positions"][0]["return_pct"] is None
 
         # The config is now permanent: a plain /import of the same file (no
         # LLM involved) succeeds immediately through the ordinary S2 path.

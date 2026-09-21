@@ -2,6 +2,7 @@ import zipfile
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import date as date_type
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import get_args
 from uuid import UUID
@@ -389,6 +390,37 @@ def _to_position_out(row: PositionRow) -> PositionOut:
         ticker=ticker,
         exchange_code=exchange_code,
         identification_rule=identification_rule,
+        return_pct=_return_pct(
+            quantity=quantity,
+            avg_cost=avg_cost,
+            cost_currency=cost_currency,
+            market_value=market_value,
+            market_currency=market_currency,
+        ),
+    )
+
+
+def _return_pct(
+    *,
+    quantity: Decimal,
+    avg_cost: Decimal | None,
+    cost_currency: str | None,
+    market_value: Decimal | None,
+    market_currency: str | None,
+) -> Decimal | None:
+    # Short/derivative positions (quantity <= 0) need a sign-aware formula --
+    # the naive one below would report a loss as a gain -- out of scope here.
+    if avg_cost is None or market_value is None or quantity <= 0:
+        return None
+    if cost_currency != market_currency:
+        return None
+
+    cost_basis = quantity * avg_cost
+    if cost_basis == 0:
+        return None
+
+    return ((market_value - cost_basis) / cost_basis * 100).quantize(
+        Decimal("0.1"), rounding=ROUND_HALF_UP
     )
 
 

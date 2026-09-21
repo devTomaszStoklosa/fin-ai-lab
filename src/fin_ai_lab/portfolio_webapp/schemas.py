@@ -40,6 +40,7 @@ class PositionOut(BaseModel):
     ticker: str | None
     exchange_code: str | None
     identification_rule: str | None
+    return_pct: Decimal | None
 
 
 class SnapshotOut(BaseModel):
