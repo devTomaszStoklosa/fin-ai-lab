@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createPortfolio, fetchHealth, fetchPortfolios } from './api'
 import type { Portfolio } from './api'
+import PortfolioDetail from './PortfolioDetail'
 import './App.css'
 
 function App() {
@@ -11,6 +12,7 @@ function App() {
   const [name, setName] = useState('')
   const [broker, setBroker] = useState('xtb')
   const [accountType, setAccountType] = useState('regular')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   function reloadPortfolios() {
     fetchPortfolios()
@@ -36,6 +38,8 @@ function App() {
       .catch((e: Error) => setError(e.message))
   }
 
+  const selectedPortfolio = portfolios?.find((p) => p.id === selectedId) ?? null
+
   return (
     <div className="page">
       <header className="topbar">
@@ -47,56 +51,73 @@ function App() {
         </span>
       </header>
 
-      <main className="content">
-        <h1>Twoje portfele</h1>
-        {error && <p className="error">{error}</p>}
-
-        {portfolios === null ? (
-          <p>Wczytywanie…</p>
-        ) : portfolios.length === 0 ? (
-          <p className="muted">Brak portfeli — dodaj pierwszy poniżej.</p>
+      <main>
+        {selectedPortfolio ? (
+          <PortfolioDetail portfolio={selectedPortfolio} onBack={() => setSelectedId(null)} />
         ) : (
-          <div className="grid">
-            {portfolios.map((p) => (
-              <div className="card" key={p.id}>
-                <div className="badges">
-                  {p.broker && <span className="badge">{p.broker.toUpperCase()}</span>}
-                  {p.account_type && <span className="badge muted-badge">{p.account_type}</span>}
-                </div>
-                <div className="name">{p.name}</div>
-                <div className="muted small">
-                  utworzono {new Date(p.created_at).toLocaleDateString('pl-PL')}
-                </div>
+          <div className="content">
+            <h1>Twoje portfele</h1>
+            {error && <p className="error">{error}</p>}
+
+            {portfolios === null ? (
+              <p>Wczytywanie…</p>
+            ) : portfolios.length === 0 ? (
+              <p className="muted">Brak portfeli — dodaj pierwszy poniżej.</p>
+            ) : (
+              <div className="grid">
+                {portfolios.map((p) => (
+                  <button
+                    type="button"
+                    className="card"
+                    key={p.id}
+                    onClick={() => setSelectedId(p.id)}
+                  >
+                    <div className="badges">
+                      {p.broker && <span className="badge">{p.broker.toUpperCase()}</span>}
+                      {p.account_type && (
+                        <span className="badge muted-badge">{p.account_type}</span>
+                      )}
+                    </div>
+                    <div className="name">{p.name}</div>
+                    <div className="muted small">
+                      utworzono {new Date(p.created_at).toLocaleDateString('pl-PL')}
+                    </div>
+                  </button>
+                ))}
               </div>
-            ))}
+            )}
+
+            <form className="create-form" onSubmit={handleCreate}>
+              <h2>Nowy portfel</h2>
+              <label>
+                Nazwa
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="np. XTB — Rachunek zwykły"
+                />
+              </label>
+              <label>
+                Broker
+                <select value={broker} onChange={(e) => setBroker(e.target.value)}>
+                  <option value="xtb">XTB</option>
+                  <option value="bossa">Bossa</option>
+                  <option value="other">inny</option>
+                </select>
+              </label>
+              <label>
+                Typ konta
+                <select value={accountType} onChange={(e) => setAccountType(e.target.value)}>
+                  <option value="regular">zwykły</option>
+                  <option value="ike">IKE</option>
+                  <option value="ikze">IKZE</option>
+                  <option value="other">inny</option>
+                </select>
+              </label>
+              <button type="submit">Dodaj portfel</button>
+            </form>
           </div>
         )}
-
-        <form className="create-form" onSubmit={handleCreate}>
-          <h2>Nowy portfel</h2>
-          <label>
-            Nazwa
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="np. XTB — Rachunek zwykły" />
-          </label>
-          <label>
-            Broker
-            <select value={broker} onChange={(e) => setBroker(e.target.value)}>
-              <option value="xtb">XTB</option>
-              <option value="bossa">Bossa</option>
-              <option value="other">inny</option>
-            </select>
-          </label>
-          <label>
-            Typ konta
-            <select value={accountType} onChange={(e) => setAccountType(e.target.value)}>
-              <option value="regular">zwykły</option>
-              <option value="ike">IKE</option>
-              <option value="ikze">IKZE</option>
-              <option value="other">inny</option>
-            </select>
-          </label>
-          <button type="submit">Dodaj portfel</button>
-        </form>
       </main>
     </div>
   )
