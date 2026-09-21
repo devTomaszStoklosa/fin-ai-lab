@@ -1,5 +1,6 @@
 import asyncio
 import importlib.metadata
+import os
 import sys
 from datetime import datetime
 from decimal import Decimal
@@ -79,6 +80,8 @@ news_classifier_app = typer.Typer()
 app.add_typer(news_classifier_app, name="news-classifier")
 investment_committee_app = typer.Typer()
 app.add_typer(investment_committee_app, name="investment-committee")
+
+PORTFOLIO_WEBAPP_DB_PATH = Path("data/private/portfolio_webapp.duckdb")
 
 EVALS_DIR = Path("evals")
 
@@ -593,6 +596,23 @@ def investment_committee_compare(
         f"committee:    koszt {report.committee.cost_usd} USD, "
         f"latencja {report.committee.latency_ms} ms"
     )
+
+
+@app.command("web")
+def web_command(
+    port: int = typer.Option(
+        int(os.environ.get("PORT", 8010)), "--port", help="Defaults to $PORT, else 8010."
+    ),
+    db_path: Path = typer.Option(PORTFOLIO_WEBAPP_DB_PATH, "--db-path"),
+) -> None:
+    # Local imports: fastapi/uvicorn/duckdb are the optional "ui" extra
+    # (portfolio-webapp-S1) -- every other CLI command must keep working
+    # without it, same reasoning as yfinance's local import in P1.
+    import uvicorn
+
+    from fin_ai_lab.portfolio_webapp.api import create_app
+
+    uvicorn.run(create_app(db_path=db_path), host="127.0.0.1", port=port)
 
 
 def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:

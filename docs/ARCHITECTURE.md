@@ -9,7 +9,7 @@ Dokument żywy: opisuje docelowy układ repo i kontrakty modułów wspólnych. D
 3. Każde wywołanie LLM przechodzi przez `core.llm` — koszt i trace są zawsze liczone.
 4. Prompty żyją w plikach z numerem wersji; wyniki evali są przypięte do wersji ([ADR-0004](adr/0004-evals-first-versioned-prompts.md)).
 5. Maszyna bez AVX2 i GPU: brak ciężkich usług lokalnych, trening w chmurze ([ADR-0005](adr/0005-cpu-only-machine-cloud-gpu.md)).
-6. Projekty zależą od `core`; `core` nie zależy od projektów; projekty nie importują się nawzajem poza P5, który korzysta z publicznych funkcji `service.py` pozostałych.
+6. Projekty zależą od `core`; `core` nie zależy od projektów; projekty nie importują się nawzajem poza P5 (korzysta z publicznych funkcji `service.py` pozostałych) i `portfolio_webapp` (korzysta z `service.py` P1).
 
 ## Układ repo
 
@@ -30,7 +30,9 @@ fin-ai-lab/
 │   ├── filings_rag/            # P2
 │   ├── market_pulse/           # P3
 │   ├── news_classifier/        # P4: inferencja, baseline'y
-│   └── committee/              # P5
+│   ├── investment_committee/   # P5
+│   └── portfolio_webapp/       # portfolio-webapp: FastAPI + DuckDB, konsumuje P1 przez service.py
+├── frontend/                    # portfolio-webapp: Vite + React + TypeScript
 ├── evals/
 │   ├── <suite>/suite.yaml      # konfiguracja suity (w repo)
 │   ├── <suite>/cases.jsonl     # przypadki syntetyczne lub zanonimizowane (w repo)
@@ -56,7 +58,8 @@ flowchart TB
     P2[filings_rag]
     P3[market_pulse]
     P4[news_classifier]
-    P5[committee]
+    P5[investment_committee]
+    PW[portfolio_webapp]
   end
   subgraph core[core]
     CFG[config]
@@ -68,7 +71,9 @@ flowchart TB
   end
   P1 & P2 & P3 & P4 --> core
   P5 --> core
+  PW --> core
   P5 -. service.py .-> P1 & P2 & P3 & P4
+  PW -. service.py .-> P1
   LLM --> API[(Gemini API)]
   HTTP --> EXT[(SEC, FRED, NBP, GUS, RSS, OpenFIGI)]
   EV --> LLM
@@ -156,4 +161,4 @@ Każda pozycja wymaga testu importu na tej maszynie przed dodaniem.
 | `rag` | `bm25s`, `pypdf`, `voyageai` | P2 |
 | `pulse` | `mcp`, `feedparser`, `yfinance` (P1 już go dodał w `portfolio`) | P3 |
 | `ml` | `scikit-learn`, `transformers` (+ `torch` CPU po weryfikacji) | P4 |
-| `ui` | `fastapi`, `uvicorn` | P5 |
+| `ui` | `fastapi`, `uvicorn`, `duckdb` (zweryfikowane na tej maszynie 2026-09-21) | portfolio-webapp |

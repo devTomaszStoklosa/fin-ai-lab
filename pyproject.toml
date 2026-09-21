@@ -53,6 +53,11 @@ herbert = ["torch>=2.14", "transformers>=5.0"]
 # fine with no AVX2 issue. peft is for the one-time LoRA-merge step in
 # scripts/news_classifier_quantize_bielik.py, not the runtime classifier.
 quantized = ["llama-cpp-python>=0.3", "peft>=0.13", "transformers>=5.0"]
+# duckdb ships prebuilt wheels (no local compile like llama-cpp-python) but
+# is still a native extension -- test-import first (tests/test_environment.py)
+# before betting portfolio-webapp's persistence on it, same discipline as
+# every other native dependency above. fastapi/uvicorn are pure Python.
+ui = ["fastapi>=0.120.0", "uvicorn[standard]>=0.38.0", "duckdb>=1.4.0"]
 
 [project.scripts]
 fin-ai-lab = "fin_ai_lab.cli:app"
