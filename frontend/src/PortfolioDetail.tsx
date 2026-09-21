@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ImportFailure, fetchSnapshots, importFile } from './api'
 import type { Portfolio, Snapshot } from './api'
+import { trimTrailingZeros } from './format'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -28,6 +29,11 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
   }
 
   useEffect(reloadSnapshots, [portfolio.id])
+
+  // Backend returns snapshots newest-first; the detail page shows the
+  // current state (the latest one), not a stack of every past import --
+  // that history view belongs to portfolio-webapp-S7.
+  const latestSnapshot = snapshots && snapshots.length > 0 ? snapshots[0] : null
 
   function handleImport(event: FormEvent) {
     event.preventDefault()
@@ -106,58 +112,56 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
         )}
       </form>
 
-      <h2>Snapshoty</h2>
+      <h2>Pozycje</h2>
       {loadError && <p className="error">{loadError}</p>}
       {snapshots === null ? (
         <p>Wczytywanie…</p>
-      ) : snapshots.length === 0 ? (
-        <p className="muted">Brak importów — wgraj pierwszy plik powyżej.</p>
+      ) : latestSnapshot === null ? (
+        <p className="muted">Brak pozycji — wgraj pierwszy plik powyżej.</p>
       ) : (
-        snapshots.map((snapshot) => (
-          <section className="snapshot" key={snapshot.id}>
-            <div className="snapshot-meta">
-              <span className="badge">{snapshot.broker.toUpperCase()}</span>
-              <span>wycena {snapshot.valuation_date}</span>
-              <span className="muted small">
-                zaimportowano {new Date(snapshot.imported_at).toLocaleString('pl-PL')}
-              </span>
-            </div>
-            {snapshot.positions.length === 0 ? (
-              <p className="muted">Brak pozycji w tym imporcie.</p>
-            ) : (
-              <table className="positions">
-                <thead>
-                  <tr>
-                    <th>Instrument</th>
-                    <th>ISIN / symbol</th>
-                    <th>Ilość</th>
-                    <th>Śr. koszt</th>
-                    <th>Wartość</th>
-                    <th>Klasa</th>
-                    <th>Status</th>
+        <section className="snapshot">
+          <div className="snapshot-meta">
+            <span className="badge">{latestSnapshot.broker.toUpperCase()}</span>
+            <span>wycena {latestSnapshot.valuation_date}</span>
+            <span className="muted small">
+              zaimportowano {new Date(latestSnapshot.imported_at).toLocaleString('pl-PL')}
+            </span>
+          </div>
+          {latestSnapshot.positions.length === 0 ? (
+            <p className="muted">Brak pozycji w tym imporcie.</p>
+          ) : (
+            <table className="positions">
+              <thead>
+                <tr>
+                  <th>Instrument</th>
+                  <th>ISIN / symbol</th>
+                  <th>Ilość</th>
+                  <th>Śr. koszt</th>
+                  <th>Wartość</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {latestSnapshot.positions.map((position) => (
+                  <tr key={position.id}>
+                    <td>{position.instrument_name}</td>
+                    <td className="muted">{position.isin ?? position.symbol ?? '—'}</td>
+                    <td>{trimTrailingZeros(position.quantity)}</td>
+                    <td>
+                      {position.avg_cost ? trimTrailingZeros(position.avg_cost) : '—'}{' '}
+                      {position.cost_currency ?? ''}
+                    </td>
+                    <td>
+                      {position.market_value ? trimTrailingZeros(position.market_value) : '—'}{' '}
+                      {position.market_currency ?? ''}
+                    </td>
+                    <td className="muted">{position.resolution_status}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {snapshot.positions.map((position) => (
-                    <tr key={position.id}>
-                      <td>{position.instrument_name}</td>
-                      <td className="muted">{position.isin ?? position.symbol ?? '—'}</td>
-                      <td>{position.quantity}</td>
-                      <td>
-                        {position.avg_cost ?? '—'} {position.cost_currency ?? ''}
-                      </td>
-                      <td>
-                        {position.market_value ?? '—'} {position.market_currency ?? ''}
-                      </td>
-                      <td className="muted">{position.asset_class}</td>
-                      <td className="muted">{position.resolution_status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
-        ))
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
       )}
     </div>
   )
