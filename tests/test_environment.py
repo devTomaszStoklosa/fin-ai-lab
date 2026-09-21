@@ -62,3 +62,16 @@ def test_scikit_learn_works_on_this_cpu_when_installed() -> None:
     model = LogisticRegression().fit(features, ["positive", "negative"])
 
     assert list(model.predict(features)) == ["positive", "negative"]
+
+
+def test_duckdb_works_on_this_cpu_when_installed() -> None:
+    # "ui" extra (portfolio-webapp-S1) — ships prebuilt wheels (unlike
+    # llama-cpp-python) but is still a native extension, so still gets the
+    # same import-and-one-operation check as everything else here.
+    duckdb = pytest.importorskip("duckdb")
+
+    connection = duckdb.connect(":memory:")
+    connection.execute("CREATE TABLE probe (id INTEGER, name TEXT)")
+    connection.execute("INSERT INTO probe VALUES (1, 'a'), (2, 'b')")
+
+    assert connection.execute("SELECT count(*) FROM probe").fetchone() == (2,)

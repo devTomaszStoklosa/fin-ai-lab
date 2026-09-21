@@ -80,3 +80,4 @@ Uzupełniana przy każdym teście importu.
 | `torch` (CPU) | 2.14.0+cpu | import + `nn.Linear` forward + pełny BERT-base-shaped `AutoModelForSequenceClassification` forward pass (20 powtórzeń) | 2026-09-19 | OK, bez problemów z AVX2 — ~142ms/nagłówek na CPU, wystarczy do lokalnej inferencji HerBERT (P4-S7 REQ-021) |
 | `transformers` | 5.17.0 | import + `AutoTokenizer.from_pretrained` + `AutoModelForSequenceClassification` forward | 2026-09-19 | OK — ekstra `herbert` (P4-S7) |
 | `llama-cpp-python` | 0.3.35 | import + realna inferencja (`Llama(...)`, `ggml-org/test-model-stories260K`, 1 MB) | 2026-09-19 | OK, bez problemów z AVX2 — brak koła na tę platformę, budowa ze źródła ~12 min — ekstra `quantized` (P4-S6) |
+| `duckdb` | 1.5.5 | import + `CREATE TABLE`/`INSERT`/`SELECT count(*)` na połączeniu `:memory:` | 2026-09-21 | OK, koło gotowe (bez kompilacji), bez problemów z AVX2 — ekstra `ui` (portfolio-webapp-S1, trwałość) |
