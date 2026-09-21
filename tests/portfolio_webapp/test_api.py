@@ -181,11 +181,16 @@ def test_import_xtb_file_creates_snapshot_with_positions(client: TestClient) -> 
     assert len(body["snapshot"]["positions"]) == 2
     instrument_names = {p["instrument_name"] for p in body["snapshot"]["positions"]}
     assert instrument_names == {"MSCI ACWI", "Atrem"}
-    # market_value/avg_cost come straight from the fixture's "Value"/"Open
-    # price" columns -- return_pct = (market_value - qty*avg_cost) /
-    # (qty*avg_cost) * 100, rounded to 1 decimal.
+    # Atrem (PL-listed) has no "Net Profit %" in the fixture, so its
+    # avg_cost still comes straight from "Open price" as before. MSCI ACWI
+    # (ISAC.UK) does have one (59.4, matching the real XTB export) -- its
+    # avg_cost is derived from Value and that percentage instead of trusting
+    # "Open price" (69.48), which is in the instrument's own trading
+    # currency, not PLN (see issue #188). return_pct = (market_value -
+    # qty*avg_cost) / (qty*avg_cost) * 100, rounded to 1 decimal, so it
+    # reproduces XTB's own "Net Profit %" for MSCI ACWI by construction.
     return_by_name = {p["instrument_name"]: p["return_pct"] for p in body["snapshot"]["positions"]}
-    assert return_by_name == {"MSCI ACWI": "558.6", "Atrem": "335.1"}
+    assert return_by_name == {"MSCI ACWI": "59.4", "Atrem": "335.1"}
 
 
 def test_import_unrecognized_workbook_returns_422_with_errors(client: TestClient) -> None:

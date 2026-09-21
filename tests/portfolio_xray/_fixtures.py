@@ -44,9 +44,15 @@ def build_synthetic_xtb_workbook(extra_note: str | None = None) -> bytes:
 
     sheet.append(XTB_OPEN_POSITIONS_HEADERS)
     padding = [None] * (len(XTB_OPEN_POSITIONS_HEADERS) - 9)
+    # Net Profit % (index 12 of the tail) mirrors the real ISAC.UK export:
+    # 59.4. XTB computes it correctly in account currency, unlike "Open
+    # price" (69.48), which is in the instrument's own trading currency
+    # (see issue #188) -- this lets tests exercise the derived-avg_cost path.
+    first_row_tail = list(padding)
+    first_row_tail[3] = 59.4
     first_row = [
         "My Trades", "MSCI ACWI", "ISAC.UK", "ETF", None, 6.0, 2745.41, None, 69.48
-    ] + padding
+    ] + first_row_tail
     if extra_note is not None:
         first_row.append(extra_note)
     sheet.append(first_row)

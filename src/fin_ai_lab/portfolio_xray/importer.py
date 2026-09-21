@@ -89,7 +89,18 @@ def build_position(
     quantity = mapped.pop("quantity", None)
     market_value = mapped.pop("market_value", None)
     avg_cost = mapped.pop("avg_cost", None)
+    net_profit_pct = mapped.pop("net_profit_pct", None)
     isin = mapped.pop("isin", None)
+
+    quantity_decimal = Decimal(str(quantity))
+    market_value_decimal = Decimal(str(market_value)) if market_value is not None else None
+    avg_cost_decimal = Decimal(str(avg_cost)) if avg_cost is not None else None
+
+    derived_avg_cost = _derive_avg_cost_from_broker_return(
+        market_value_decimal, net_profit_pct, quantity_decimal
+    )
+    if derived_avg_cost is not None:
+        avg_cost_decimal = derived_avg_cost
 
     return Position(
         broker=broker,
@@ -98,13 +109,32 @@ def build_position(
         isin=str(isin) if isin else None,
         symbol=str(mapped["symbol"]) if mapped.get("symbol") is not None else None,
         asset_class=asset_class,
-        quantity=Decimal(str(quantity)),
-        avg_cost=Decimal(str(avg_cost)) if avg_cost is not None else None,
-        cost_currency=market_currency if avg_cost is not None else None,
-        market_value=Decimal(str(market_value)) if market_value is not None else None,
-        market_currency=market_currency if market_value is not None else None,
+        quantity=quantity_decimal,
+        avg_cost=avg_cost_decimal,
+        cost_currency=market_currency if avg_cost_decimal is not None else None,
+        market_value=market_value_decimal,
+        market_currency=market_currency if market_value_decimal is not None else None,
         valuation_date=valuation_date,
     )
+
+
+def _derive_avg_cost_from_broker_return(
+    market_value: Decimal | None, net_profit_pct: object, quantity: Decimal
+) -> Decimal | None:
+    # Some brokers (XTB's "Open Positions" export) report a per-share price
+    # ("Open price") in the instrument's own trading currency, but "Value"
+    # and this broker-computed return % are always in the account currency
+    # -- import_xlsx has only one market_currency for the whole file, so
+    # trusting "Open price" as if it were already in that currency silently
+    # mislabels it for foreign-listed instruments (see issue #188). Deriving
+    # cost from the account-currency value and the broker's own return %
+    # sidesteps that instead of guessing an FX rate.
+    if net_profit_pct in (None, "") or market_value is None or quantity <= 0:
+        return None
+    cost_factor = 1 + Decimal(str(net_profit_pct)) / 100
+    if cost_factor == 0:
+        return None
+    return market_value / cost_factor / quantity
 
 
 def _dedup_key(position: Position) -> tuple[str, str, str | None]:

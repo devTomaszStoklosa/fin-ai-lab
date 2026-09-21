@@ -31,5 +31,6 @@ column_mapping:
   "Volume": quantity
   "Value": market_value
   "Open price": avg_cost
+  "Net Profit %": net_profit_pct
 number_format: en
 delimiter: null
