@@ -295,6 +295,14 @@
   letter-spacing: 0.04em;
 }
 
+.return-gain {
+  color: var(--gain);
+}
+
+.return-loss {
+  color: var(--loss);
+}
+
 .propose-config {
   background: var(--surface);
   border: 1px solid var(--line);
