@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from fin_ai_lab.portfolio_xray.canonical import AssetClass
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 
 
@@ -79,3 +80,18 @@ class ProposePreview(BaseModel):
     config: ParserConfig
     positions: list[PositionPreviewOut]
     warnings: list[str]
+
+
+class PositionCreate(BaseModel):
+    instrument_name: str = Field(min_length=1, max_length=200)
+    isin: str | None = None
+    symbol: str | None = None
+    asset_class: AssetClass
+    quantity: Decimal = Field(gt=0)
+    avg_cost: Decimal = Field(gt=0)
+
+
+class PositionUpdate(PositionCreate):
+    # Not auto-derived on update, unlike creation -- this is what lets the
+    # owner move a manual position's valuation away from cost basis later.
+    market_value: Decimal = Field(ge=0)

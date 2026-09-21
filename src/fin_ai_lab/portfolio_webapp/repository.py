@@ -5,6 +5,8 @@ import duckdb
 
 from fin_ai_lab.portfolio_xray.canonical import Position
 
+MANUAL_BROKER = "manual"
+
 PortfolioRow = tuple[uuid.UUID, str, str | None, str | None, datetime]
 SnapshotRow = tuple[uuid.UUID, uuid.UUID, str, date, datetime, date | None, date | None]
 PositionRow = tuple[
@@ -127,15 +129,127 @@ def insert_positions(
         )
 
 
+def insert_position(
+    connection: duckdb.DuckDBPyConnection, *, snapshot_id: uuid.UUID, position: Position
+) -> PositionRow:
+    position_id = uuid.uuid4()
+    connection.execute(
+        "INSERT INTO positions VALUES "
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            position_id,
+            snapshot_id,
+            position.broker,
+            position.account_type,
+            position.instrument_name,
+            position.isin,
+            position.symbol,
+            position.asset_class,
+            position.quantity,
+            position.avg_cost,
+            position.cost_currency,
+            position.market_value,
+            position.market_currency,
+            position.valuation_date,
+            position.resolution_status,
+            position.figi,
+            position.ticker,
+            position.exchange_code,
+            position.identification_rule,
+        ],
+    )
+    row = get_position(connection, position_id)
+    assert row is not None
+    return row
+
+
+def get_position(
+    connection: duckdb.DuckDBPyConnection, position_id: uuid.UUID
+) -> PositionRow | None:
+    rows = connection.execute(
+        "SELECT id, snapshot_id, broker, account_type, instrument_name, isin, symbol, "
+        "asset_class, quantity, avg_cost, cost_currency, market_value, market_currency, "
+        "valuation_date, resolution_status, figi, ticker, exchange_code, identification_rule "
+        "FROM positions WHERE id = ?",
+        [position_id],
+    ).fetchall()
+    return rows[0] if rows else None
+
+
+def update_position(
+    connection: duckdb.DuckDBPyConnection, *, position_id: uuid.UUID, position: Position
+) -> PositionRow:
+    connection.execute(
+        "UPDATE positions SET instrument_name = ?, isin = ?, symbol = ?, asset_class = ?, "
+        "quantity = ?, avg_cost = ?, cost_currency = ?, market_value = ?, market_currency = ?, "
+        "resolution_status = ?, figi = ?, ticker = ?, exchange_code = ?, identification_rule = ? "
+        "WHERE id = ?",
+        [
+            position.instrument_name,
+            position.isin,
+            position.symbol,
+            position.asset_class,
+            position.quantity,
+            position.avg_cost,
+            position.cost_currency,
+            position.market_value,
+            position.market_currency,
+            position.resolution_status,
+            position.figi,
+            position.ticker,
+            position.exchange_code,
+            position.identification_rule,
+            position_id,
+        ],
+    )
+    row = get_position(connection, position_id)
+    assert row is not None
+    return row
+
+
+def delete_position(connection: duckdb.DuckDBPyConnection, position_id: uuid.UUID) -> None:
+    connection.execute("DELETE FROM positions WHERE id = ?", [position_id])
+
+
 def list_snapshots(
     connection: duckdb.DuckDBPyConnection, portfolio_id: uuid.UUID
 ) -> list[SnapshotRow]:
+    # The manual-positions container (broker == MANUAL_BROKER, see
+    # get_or_create_manual_snapshot) is not a point-in-time import -- it
+    # would otherwise become "the latest snapshot" the moment someone adds a
+    # manual position after their last real import, hiding it from view.
     return connection.execute(
         "SELECT id, portfolio_id, broker, valuation_date, imported_at, "
         "source_file_date_min, source_file_date_max FROM portfolio_snapshots "
-        "WHERE portfolio_id = ? ORDER BY imported_at DESC",
-        [portfolio_id],
+        "WHERE portfolio_id = ? AND broker != ? ORDER BY imported_at DESC",
+        [portfolio_id, MANUAL_BROKER],
     ).fetchall()
+
+
+def find_manual_snapshot(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: uuid.UUID
+) -> SnapshotRow | None:
+    rows = connection.execute(
+        "SELECT id, portfolio_id, broker, valuation_date, imported_at, "
+        "source_file_date_min, source_file_date_max FROM portfolio_snapshots "
+        "WHERE portfolio_id = ? AND broker = ?",
+        [portfolio_id, MANUAL_BROKER],
+    ).fetchall()
+    return rows[0] if rows else None
+
+
+def get_or_create_manual_snapshot(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: uuid.UUID
+) -> SnapshotRow:
+    existing = find_manual_snapshot(connection, portfolio_id)
+    if existing is not None:
+        return existing
+    return create_snapshot(
+        connection,
+        portfolio_id=portfolio_id,
+        broker=MANUAL_BROKER,
+        valuation_date=date.today(),
+    )
 
 
 def list_positions(
