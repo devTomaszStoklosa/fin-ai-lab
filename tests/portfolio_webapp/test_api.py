@@ -1,6 +1,7 @@
 import json
 import threading
 import uuid
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
@@ -507,3 +508,61 @@ def test_concurrent_requests_do_not_corrupt_each_others_results(client: TestClie
             t.join()
 
     assert status_codes == [200] * len(status_codes)
+
+
+def test_metrics_for_xtb_import(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/metrics")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["position_count"] == 2
+    assert Decimal(body["total_value"]) == Decimal("2798.71")
+    assert body["base_currency"] == "PLN"
+    # MSCI ACWI (Value 2745.41) is "etf", Atrem (Value 53.3) is "equity" --
+    # values verified independently via a standalone Decimal computation.
+    assert body["hhi"] == "0.963"
+    assert body["effective_positions"] == "1.0"
+    assert body["top5_share"] == "100.0"  # only 2 positions, both in top 5
+    assert body["allocation_by_asset_class"] == {"etf": "98.1", "equity": "1.9"}
+    assert body["allocation_by_currency"] == {"PLN": "100.0"}
+
+
+def test_metrics_include_manual_positions(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    client.post(f"/api/portfolios/{portfolio_id}/positions", json=_manual_position_payload())
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/metrics")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["position_count"] == 1
+    assert Decimal(body["total_value"]) == Decimal("55")  # 10 * 5.5, valued at cost
+    assert body["allocation_by_asset_class"] == {"equity": "100.0"}
+
+
+def test_metrics_for_empty_portfolio_returns_no_data_not_500(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/metrics")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "position_count": 0,
+        "total_value": None,
+        "base_currency": "PLN",
+        "hhi": None,
+        "effective_positions": None,
+        "top5_share": None,
+        "allocation_by_asset_class": {},
+        "allocation_by_currency": {},
+    }
+
+
+def test_metrics_for_missing_portfolio_returns_404(client: TestClient) -> None:
+    response = client.get(f"/api/portfolios/{uuid.uuid4()}/metrics")
+
+    assert response.status_code == 404

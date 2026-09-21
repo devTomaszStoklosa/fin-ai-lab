@@ -90,6 +90,17 @@ export type ProposePreview = {
   warnings: string[]
 }
 
+export type Metrics = {
+  position_count: number
+  total_value: string | null
+  base_currency: string
+  hhi: string | null
+  effective_positions: string | null
+  top5_share: string | null
+  allocation_by_asset_class: Record<string, string>
+  allocation_by_currency: Record<string, string>
+}
+
 // The exact string P1's service.import_file returns when a file's format
 // signature matches no approved config -- the propose/approve flow only
 // makes sense to offer for this specific failure, not any import error.
@@ -210,6 +221,10 @@ export async function deletePosition(portfolioId: string, positionId: string): P
   if (!response.ok) {
     throw new Error(`${response.status} ${response.statusText}`)
   }
+}
+
+export function fetchMetrics(portfolioId: string): Promise<Metrics> {
+  return fetch(`/api/portfolios/${portfolioId}/metrics`).then((r) => asJson(r))
 }
 
 export async function approveImportConfig(
