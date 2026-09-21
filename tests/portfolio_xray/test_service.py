@@ -43,7 +43,11 @@ def _proposal_json(**overrides: object) -> str:
         "header_row": 1,
         "row_filter": None,
         "expected_headers": ["Name", "Qty", "Price"],
-        "column_mapping": {"Name": "instrument_name", "Qty": "quantity", "Price": "avg_cost"},
+        "column_mapping": [
+            {"file_header": "Name", "field": "instrument_name"},
+            {"file_header": "Qty", "field": "quantity"},
+            {"file_header": "Price", "field": "avg_cost"},
+        ],
         "number_format": "en",
         "date_format": "%Y-%m-%d",
         "encoding": "utf-8",
@@ -144,12 +148,12 @@ async def test_import_file_resolves_identification_for_positions_with_isin(tmp_p
     registry = ParserRegistry(parsers_dir=tmp_path)
     proposal = _proposal_json(
         expected_headers=["Name", "Qty", "Price", "ISIN"],
-        column_mapping={
-            "Name": "instrument_name",
-            "Qty": "quantity",
-            "Price": "avg_cost",
-            "ISIN": "isin",
-        },
+        column_mapping=[
+            {"file_header": "Name", "field": "instrument_name"},
+            {"file_header": "Qty", "field": "quantity"},
+            {"file_header": "Price", "field": "avg_cost"},
+            {"file_header": "ISIN", "field": "isin"},
+        ],
     )
     llm_client = FakeLlmClient({"propose_config": proposal})
     stub = _StubOpenFigiClient(
