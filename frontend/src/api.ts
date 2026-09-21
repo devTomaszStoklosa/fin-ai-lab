@@ -101,6 +101,15 @@ export type Metrics = {
   allocation_by_currency: Record<string, string>
 }
 
+export type Report = {
+  id: string
+  snapshot_id: string
+  generated_at: string
+  model: string
+  cost_usd: string
+  content_md: string
+}
+
 // The exact string P1's service.import_file returns when a file's format
 // signature matches no approved config -- the propose/approve flow only
 // makes sense to offer for this specific failure, not any import error.
@@ -225,6 +234,27 @@ export async function deletePosition(portfolioId: string, positionId: string): P
 
 export function fetchMetrics(portfolioId: string): Promise<Metrics> {
   return fetch(`/api/portfolios/${portfolioId}/metrics`).then((r) => asJson(r))
+}
+
+export function fetchReport(portfolioId: string): Promise<Report | null> {
+  return fetch(`/api/portfolios/${portfolioId}/report`).then((r) => asJson(r))
+}
+
+export async function generateReport(portfolioId: string, regenerate: boolean): Promise<Report> {
+  const response = await fetch(
+    `/api/portfolios/${portfolioId}/report?regenerate=${regenerate}`,
+    { method: 'POST' },
+  )
+  if (!response.ok) {
+    // An HTTPException we raise ourselves comes back as {detail: "..."},
+    // but an unhandled exception (e.g. the LLM provider itself erroring)
+    // gets FastAPI's default plain-text 500 body, not JSON -- parsing that
+    // as JSON throws and hides the real error behind a parse failure.
+    const body = await response.json().catch(() => null)
+    const detail = body && typeof body.detail === 'string' ? body.detail : response.statusText
+    throw new Error(detail)
+  }
+  return response.json()
 }
 
 export async function approveImportConfig(

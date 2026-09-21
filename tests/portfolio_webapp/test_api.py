@@ -86,6 +86,29 @@ def _client_with_fake_llm(tmp_path: Path, responses: dict[str, str]) -> TestClie
     return TestClient(app)
 
 
+def _client_with_tracked_llm(
+    tmp_path: Path, responses: dict[str, str]
+) -> tuple[TestClient, list[FakeLlmClient]]:
+    # Report generation doesn't touch ParserRegistry, unlike
+    # _client_with_fake_llm above -- default registry is fine. `created`
+    # records every FakeLlmClient the app actually built, so a test can
+    # assert a real generation did or didn't happen (a cache hit never
+    # calls llm_client_factory at all).
+    created: list[FakeLlmClient] = []
+
+    def factory() -> FakeLlmClient:
+        instance = FakeLlmClient(responses)
+        created.append(instance)
+        return instance
+
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: None,
+        llm_client_factory=factory,
+    )
+    return TestClient(app), created
+
+
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
     # openfigi_client_factory=lambda: None: no live network call from a unit
@@ -566,3 +589,122 @@ def test_metrics_for_missing_portfolio_returns_404(client: TestClient) -> None:
     response = client.get(f"/api/portfolios/{uuid.uuid4()}/metrics")
 
     assert response.status_code == 404
+
+
+_REPORT_LLM_RESPONSES = {
+    # Only the one equity position (Atrem) in the XTB fixture triggers this
+    # -- classify_sector answers non-equity positions itself, no LLM call.
+    "classify_sector": '{"sector": "Financials"}',
+    # No numbers in the text: build_report's faithfulness check only rejects
+    # numbers it can't trace back to real metrics, and prose without any
+    # digits trivially passes it.
+    "narrative": "Portfel składa się głównie z funduszy ETF, z niewielkim udziałem akcji.",
+}
+
+
+def test_get_report_returns_none_before_any_generation(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/report")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_get_report_for_missing_portfolio_returns_404(client: TestClient) -> None:
+    response = client.get(f"/api/portfolios/{uuid.uuid4()}/report")
+
+    assert response.status_code == 404
+
+
+def test_generate_report_creates_and_caches_it(tmp_path: Path) -> None:
+    test_client, created = _client_with_tracked_llm(tmp_path, _REPORT_LLM_RESPONSES)
+    with test_client as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.post(f"/api/portfolios/{portfolio_id}/report")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert "Portfel składa się głównie z funduszy ETF" in body["content_md"]
+        assert "analizą edukacyjną" in body["content_md"]  # EDUCATIONAL_FOOTER
+        assert len(created) == 1
+
+        # Reflected immediately through the read-only GET, no generation.
+        get_response = client.get(f"/api/portfolios/{portfolio_id}/report")
+        assert get_response.json()["id"] == body["id"]
+
+        # A second POST without regenerate returns the same cached report --
+        # llm_client_factory is never called a second time.
+        second_post = client.post(f"/api/portfolios/{portfolio_id}/report")
+        assert second_post.json()["id"] == body["id"]
+        assert len(created) == 1
+
+
+def test_generate_report_with_regenerate_bypasses_cache(tmp_path: Path) -> None:
+    test_client, created = _client_with_tracked_llm(tmp_path, _REPORT_LLM_RESPONSES)
+    with test_client as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        first = client.post(f"/api/portfolios/{portfolio_id}/report").json()
+        second = client.post(f"/api/portfolios/{portfolio_id}/report?regenerate=true").json()
+
+        assert second["id"] != first["id"]
+        assert len(created) == 2
+
+
+def test_generate_report_for_empty_portfolio_returns_422(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+
+    response = client.post(f"/api/portfolios/{portfolio_id}/report")
+
+    assert response.status_code == 422
+
+
+def test_generate_report_for_missing_portfolio_returns_404(client: TestClient) -> None:
+    response = client.post(f"/api/portfolios/{uuid.uuid4()}/report")
+
+    assert response.status_code == 404
+
+
+def test_generate_report_rejected_when_llm_hallucinates_number(tmp_path: Path) -> None:
+    responses = _REPORT_LLM_RESPONSES | {
+        "narrative": "Portfel zyskał w tym miesiącu aż 12345%, co jest rekordem."
+    }
+    test_client, _created = _client_with_tracked_llm(tmp_path, responses)
+    with test_client as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.post(f"/api/portfolios/{portfolio_id}/report")
+
+        assert response.status_code == 422
+        assert "not faithful" in response.json()["detail"]
+
+
+def test_concurrent_report_generation_only_calls_llm_once(tmp_path: Path) -> None:
+    test_client, created = _client_with_tracked_llm(tmp_path, _REPORT_LLM_RESPONSES)
+    with test_client as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        results: list[dict] = []
+
+        def generate() -> None:
+            response = client.post(f"/api/portfolios/{portfolio_id}/report")
+            results.append(response.json())
+
+        threads = [threading.Thread(target=generate) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # The lock forces the three requests to serialize: whichever runs
+        # first generates and caches, the other two just read that cache --
+        # only one real generation sequence (one FakeLlmClient) should exist.
+        assert len(created) == 1
+        assert {r["id"] for r in results} == {results[0]["id"]}

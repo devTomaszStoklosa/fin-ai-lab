@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import duckdb
 
@@ -30,6 +31,7 @@ PositionRow = tuple[
     str | None,  # exchange_code
     str | None,  # identification_rule
 ]
+ReportRow = tuple[uuid.UUID, uuid.UUID, datetime, str, Decimal, str]
 
 
 def list_portfolios(connection: duckdb.DuckDBPyConnection) -> list[PortfolioRow]:
@@ -262,3 +264,31 @@ def list_positions(
         "FROM positions WHERE snapshot_id = ?",
         [snapshot_id],
     ).fetchall()
+
+
+def find_latest_report(
+    connection: duckdb.DuckDBPyConnection, snapshot_id: uuid.UUID
+) -> ReportRow | None:
+    rows = connection.execute(
+        "SELECT id, snapshot_id, generated_at, model, cost_usd, content_md "
+        "FROM reports WHERE snapshot_id = ? ORDER BY generated_at DESC LIMIT 1",
+        [snapshot_id],
+    ).fetchall()
+    return rows[0] if rows else None
+
+
+def create_report(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    snapshot_id: uuid.UUID,
+    model: str,
+    cost_usd: Decimal,
+    content_md: str,
+) -> ReportRow:
+    report_id = uuid.uuid4()
+    generated_at = datetime.now(UTC)
+    connection.execute(
+        "INSERT INTO reports VALUES (?, ?, ?, ?, ?, ?)",
+        [report_id, snapshot_id, generated_at, model, cost_usd, content_md],
+    )
+    return (report_id, snapshot_id, generated_at, model, cost_usd, content_md)

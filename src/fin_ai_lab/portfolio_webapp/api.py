@@ -1,3 +1,4 @@
+import asyncio
 import zipfile
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -28,6 +29,7 @@ from fin_ai_lab.portfolio_webapp.schemas import (
     PositionPreviewOut,
     PositionUpdate,
     ProposePreview,
+    ReportOut,
     SnapshotOut,
 )
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
@@ -42,6 +44,9 @@ from fin_ai_lab.portfolio_xray.parsers.correction import (
 from fin_ai_lab.portfolio_xray.parsers.reader import read_xlsx_sheets
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
 from fin_ai_lab.portfolio_xray.privacy.injection import flag_suspicious_cells
+from fin_ai_lab.portfolio_xray.report.builder import ReportRejectedError, build_report
+from fin_ai_lab.portfolio_xray.report.models import InstrumentMetadata, MetricsJson
+from fin_ai_lab.portfolio_xray.sectors.classifier import classify_sector
 from fin_ai_lab.portfolio_xray.service import import_file
 
 BASE_CURRENCY = "PLN"  # matches canonical.Portfolio.base_currency (Literal["PLN"])
@@ -49,11 +54,13 @@ BASE_CURRENCY = "PLN"  # matches canonical.Portfolio.base_currency (Literal["PLN
 # Same default as the CLI (cli.py's `import` command) -- not exposed as a
 # web UI option, this tool doesn't need model choice as a user-facing knob.
 MODEL = "gemini-3.6-flash"
-# cwd-relative, same as cli.py's PORTFOLIO_PROMPTS_DIR -- both are always
-# launched via `uv run` from the repo root. Not imported from cli.py:
-# portfolio_webapp may only depend on core and portfolio_xray.service
-# (docs/ARCHITECTURE.md rule 6), not on the CLI module.
+# cwd-relative, same as cli.py's own prompt dirs -- both are always launched
+# via `uv run` from the repo root. Not imported from cli.py: portfolio_webapp
+# may only depend on core and portfolio_xray.service (docs/ARCHITECTURE.md
+# rule 6), not on the CLI module.
 PORTFOLIO_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
+REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
+SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
 
 
 def _default_llm_client() -> LlmClient:
@@ -90,10 +97,18 @@ def create_app(
         app.state.db = db.connect(db_path)
         # Loaded once, unlike ParserRegistry: prompts are static app
         # configuration, not something that needs to reflect a change made
-        # by the previous request.
+        # by the previous request. Three directories, one registry: prompt
+        # ids don't collide across them (propose_config vs. narrative vs.
+        # classify_sector), so load_dir is safe to call repeatedly.
         prompt_registry = PromptRegistry()
         prompt_registry.load_dir(PORTFOLIO_PROMPTS_DIR)
+        prompt_registry.load_dir(REPORT_PROMPTS_DIR)
+        prompt_registry.load_dir(SECTOR_PROMPTS_DIR)
         app.state.prompt_registry = prompt_registry
+        # One lock per portfolio (02-spec.md edge case): a second "generuj"
+        # while the first is still running waits for it instead of starting
+        # a parallel LLM call for the same report.
+        app.state.report_locks: dict[UUID, asyncio.Lock] = {}
         yield
         app.state.db.close()
 
@@ -369,6 +384,103 @@ def create_app(
             },
         )
 
+    @app.get(
+        "/api/portfolios/{portfolio_id}/report",
+        response_model=ReportOut | None,
+    )
+    def get_cached_report(
+        portfolio_id: UUID,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> ReportOut | None:
+        if repository.get_portfolio(connection, portfolio_id) is None:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+
+        context = _current_reporting_context(connection, portfolio_id)
+        if context is None:
+            return None
+        snapshot_id, _valuation_date = context
+        cached = repository.find_latest_report(connection, snapshot_id)
+        return _to_report_out(cached) if cached is not None else None
+
+    @app.post("/api/portfolios/{portfolio_id}/report", response_model=ReportOut)
+    async def generate_portfolio_report(
+        portfolio_id: UUID,
+        regenerate: bool = False,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> ReportOut:
+        if repository.get_portfolio(connection, portfolio_id) is None:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+
+        context = _current_reporting_context(connection, portfolio_id)
+        if context is None:
+            raise HTTPException(status_code=422, detail="Portfolio has no positions yet")
+        snapshot_id, valuation_date = context
+
+        lock = app.state.report_locks.setdefault(portfolio_id, asyncio.Lock())
+        async with lock:
+            if not regenerate:
+                cached = repository.find_latest_report(connection, snapshot_id)
+                if cached is not None:
+                    return _to_report_out(cached)
+
+            rows = _current_position_rows(connection, portfolio_id)
+            positions = [_position_row_to_domain(row) for row in rows]
+            fx_client = fx_client_factory()
+            positions_with_base_value = [
+                (position, await _base_currency_value(position, fx_client))
+                for position in positions
+            ]
+            try:
+                weights = compute_weights(positions_with_base_value)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+            llm_client = llm_client_factory()
+            prompt_registry = app.state.prompt_registry
+            cost_before = llm_client.total_cost_usd
+
+            instrument_metadata: dict[str, InstrumentMetadata] = {}
+            category_weight: dict[str, Decimal] = {}
+            for index, weighted in enumerate(weights.weighted_positions):
+                key = str(index)
+                category = await classify_sector(
+                    weighted.position, llm_client, prompt_registry, MODEL
+                )
+                category_weight[category] = (
+                    category_weight.get(category, Decimal(0)) + weighted.weight
+                )
+                instrument_metadata[key] = InstrumentMetadata(
+                    name=weighted.position.instrument_name,
+                    category=category,
+                    exchange_code=weighted.position.exchange_code,
+                    currency=weighted.position.market_currency,
+                )
+
+            metrics = MetricsJson(
+                valuation_date=valuation_date,
+                base_currency=BASE_CURRENCY,
+                weights=weights,
+                risk=None,  # metrics/risk.py needs yfinance history -- out of scope (S5/S6)
+                allocation_by_category=category_weight,
+            )
+
+            try:
+                content_md = await build_report(
+                    metrics, instrument_metadata, llm_client, prompt_registry, MODEL
+                )
+            except ReportRejectedError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+            cost_usd = llm_client.total_cost_usd - cost_before
+            row = repository.create_report(
+                connection,
+                snapshot_id=snapshot_id,
+                model=MODEL,
+                cost_usd=cost_usd,
+                content_md=content_md,
+            )
+            return _to_report_out(row)
+
     return app
 
 
@@ -430,6 +542,25 @@ def _current_position_rows(
     if manual_snapshot is not None:
         rows.extend(repository.list_positions(connection, manual_snapshot[0]))
     return rows
+
+
+def _current_reporting_context(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID
+) -> tuple[UUID, date_type] | None:
+    # The snapshot id a report gets cached against, and the valuation date
+    # put in front of the LLM -- the latest real import if one exists
+    # (its own valuation_date), else the manual-positions container (dated
+    # today, since manual positions don't carry one collective date).
+    # Editing a manual position afterwards doesn't change this id, so a
+    # cached report can go stale until the owner clicks "Odśwież" --
+    # accepted trade-off (REQ-041 already provides that escape hatch).
+    snapshots = repository.list_snapshots(connection, portfolio_id)
+    if snapshots:
+        return snapshots[0][0], snapshots[0][3]
+    manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
+    if manual_snapshot is not None:
+        return manual_snapshot[0], date_type.today()
+    return None
 
 
 async def _build_manual_position(
@@ -706,6 +837,18 @@ def _to_position_preview(position: Position) -> PositionPreviewOut:
         cost_currency=position.cost_currency,
         market_value=position.market_value,
         market_currency=position.market_currency,
+    )
+
+
+def _to_report_out(row: repository.ReportRow) -> ReportOut:
+    id_, snapshot_id, generated_at, model, cost_usd, content_md = row
+    return ReportOut(
+        id=id_,
+        snapshot_id=snapshot_id,
+        generated_at=generated_at,
+        model=model,
+        cost_usd=cost_usd,
+        content_md=content_md,
     )
 
 

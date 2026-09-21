@@ -6,10 +6,12 @@ import {
   deletePosition,
   fetchMetrics,
   fetchPositions,
+  fetchReport,
   fetchSnapshots,
+  generateReport,
   importFile,
 } from './api'
-import type { Metrics, Portfolio, Position, Snapshot } from './api'
+import type { Metrics, Portfolio, Position, Report, Snapshot } from './api'
 import AllocationBars from './AllocationBars'
 import { trimTrailingZeros } from './format'
 import ManualPosition from './ManualPosition'
@@ -36,6 +38,9 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
   const [snapshots, setSnapshots] = useState<Snapshot[] | null>(null)
   const [manualPositions, setManualPositions] = useState<Position[] | null>(null)
   const [metrics, setMetrics] = useState<Metrics | null>(null)
+  const [report, setReport] = useState<Report | null>(null)
+  const [reportGenerating, setReportGenerating] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
   // 'new' adds a position; a Position edits that one; null shows neither.
@@ -67,9 +72,16 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
       .catch((e: Error) => setLoadError(e.message))
   }
 
+  function reloadReport() {
+    fetchReport(portfolio.id)
+      .then(setReport)
+      .catch((e: Error) => setLoadError(e.message))
+  }
+
   useEffect(reloadSnapshots, [portfolio.id])
   useEffect(reloadPositions, [portfolio.id])
   useEffect(reloadMetrics, [portfolio.id])
+  useEffect(reloadReport, [portfolio.id])
 
   // Backend returns snapshots newest-first; the detail page shows the
   // current state (the latest one), not a stack of every past import --
@@ -94,6 +106,15 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
         reloadMetrics()
       })
       .catch((e: Error) => setLoadError(e.message))
+  }
+
+  function handleGenerateReport(regenerate: boolean) {
+    setReportGenerating(true)
+    setReportError(null)
+    generateReport(portfolio.id, regenerate)
+      .then(setReport)
+      .catch((e: Error) => setReportError(e.message))
+      .finally(() => setReportGenerating(false))
   }
 
   function handleImport(event: FormEvent) {
@@ -188,6 +209,43 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
               allocation={metrics.allocation_by_asset_class}
             />
             <AllocationBars title="Ekspozycja walutowa" allocation={metrics.allocation_by_currency} />
+          </div>
+        </section>
+      )}
+
+      {metrics && metrics.total_value !== null && (
+        <section className="report">
+          <div className="report-header">
+            <h2>Raport AI</h2>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={reportGenerating}
+              onClick={() => handleGenerateReport(report !== null)}
+            >
+              {reportGenerating ? 'Generuję…' : report ? 'Odśwież' : 'Generuj raport'}
+            </button>
+          </div>
+
+          {reportError && (
+            <div className="banner banner-error">
+              <p>{reportError}</p>
+            </div>
+          )}
+
+          {report && (
+            <>
+              <div className="muted small">
+                Wygenerowano {new Date(report.generated_at).toLocaleString('pl-PL')} · koszt{' '}
+                {report.cost_usd} USD
+              </div>
+              <div className="report-content">{report.content_md}</div>
+            </>
+          )}
+
+          {/* REQ-042: stays visible regardless of the report's own content. */}
+          <div className="report-disclaimer muted small">
+            To opis ekspozycji i ryzyka, nie rekomendacja inwestycyjna.
           </div>
         </section>
       )}
