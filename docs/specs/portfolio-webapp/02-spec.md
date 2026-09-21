@@ -14,6 +14,8 @@ Upstream: 01-story.md
 | Replay | przeliczenie bieżących pozycji od zera z całego ledgera; nigdy merge dwóch wcześniej policzonych stanów |
 | Klucz deduplikacji | hash wszystkich kolumn wiersza transakcji, używany do wykrycia, że dany wiersz już jest w ledgerze |
 | Portfel | zbiór pozycji jednego właściciela, niezależny od tego, z ilu plików/brokerów pochodzą |
+| Agregat | nazwany przez właściciela zbiór instrumentów i/lub innych agregatów, do prezentacji łącznej ekspozycji niezależnej od tego, przez jaki instrument jest trzymana |
+| Cykl agregatów | sytuacja, w której agregat pośrednio zawierałby sam siebie — zabroniona, odrzucana przy zapisie |
 
 ## Actors and permissions
 
@@ -21,6 +23,7 @@ Upstream: 01-story.md
 |---|---|---|
 | Właściciel | wgrywa pliki, dodaje/edytuje/usuwa pozycje ręczne, akceptuje nową konfigurację parsera, generuje raport | tak |
 | Właściciel | edytuje pozycję pochodzącą z importu pliku | nie — tylko przez ponowny import |
+| Właściciel | tworzy, edytuje i usuwa agregaty | tak |
 | P1 (`service.py`, `report/orchestrator.py`) | parsuje pliki, liczy metryki, generuje raport | tak, bez zmian w jego kodzie |
 | Sieć spoza localhost | dowolne zapytanie do API | nie — serwer nasłuchuje tylko na localhost |
 
@@ -53,6 +56,14 @@ Raport
 Sieć i dostęp
 - REQ-050 (AC-7): The system shall bind its HTTP server to `localhost` only, with no authentication layer, by default.
 
+Agregaty
+- REQ-060 (AC-8): When the owner creates an aggregator with a name and a set of members (instruments and/or other aggregators), the system shall persist it and compute its value as the sum of its members' market values converted to the base currency.
+- REQ-061 (AC-9): When an aggregator's value is computed, the system shall collect the set of unique instruments reachable across its full transitive membership and sum each one once, so an instrument reachable through more than one path is never counted twice.
+- REQ-062 (AC-10): When the owner adds a member to an aggregator, the system shall reject the change if the proposed member is, directly or through nested aggregators, the target aggregator itself.
+- REQ-063: The system shall allow an instrument or an aggregator to belong to more than one aggregator at the same time.
+- REQ-064: The system shall allow renaming an aggregator and changing its membership, and shall allow deleting an aggregator; deleting an aggregator that is itself a member of another aggregator shall also remove that membership, leaving no dangling reference.
+- REQ-065: The system shall identify an aggregator's instrument members by a stable key — the ISIN when the instrument has one, otherwise broker and symbol together — never by a position row's per-snapshot id, so membership survives a re-import.
+
 ## Business rules
 
 Wybór ścieżki importu wg brokera
@@ -77,6 +88,13 @@ Cache raportu
 | nie | – | generuj, zapisz |
 | tak | nie | zwróć zapisany |
 | tak | tak | generuj ponownie, nadpisz |
+
+Cykle w agregatach
+
+| Proponowany nowy członek już (pośrednio) zawiera agregat docelowy | Wynik |
+|---|---|
+| tak | odrzucone, czytelny komunikat |
+| nie | dodane |
 
 ## Data and validation
 
@@ -108,6 +126,16 @@ Transaction (tylko brokerzy typu ledger)
 
 Position (Bossa, wyliczona przez replay) dziedziczy walidację P1's `canonical.Position` bez zmian — replay jedynie produkuje dane wejściowe do tego samego modelu, nie nowy schemat.
 
+Aggregator
+
+| Field | Type | Required | Uwagi |
+|---|---|---|---|
+| `id` | uuid | tak | |
+| `portfolio_id` | uuid | tak | agregaty są per portfel, nie globalne |
+| `name` | string | tak | 1–100 znaków |
+| `member_instrument_keys` | list[string] | nie | REQ-065 — ISIN albo `broker:symbol`, nie id pozycji |
+| `member_aggregator_ids` | list[uuid] | nie | zagnieżdżone agregaty; walidacja cyklu przy zapisie (REQ-062) |
+
 ## Edge and error cases
 
 - Ten sam plik XTB wgrany dwa razy → dwa snapshoty z tym samym `valuation_date`; UI pokazuje oba, nie scala automatycznie (właściciel widzi, że coś się powtórzyło, zamiast cichego scalenia niewłaściwych danych).
@@ -117,6 +145,10 @@ Position (Bossa, wyliczona przez replay) dziedziczy walidację P1's `canonical.P
 - Ręczna pozycja z ISIN, który da się rozpoznać przez OpenFIGI → tak samo jak pozycja z importu (P1's `_resolve_identifications`), nie osobna ścieżka.
 - DuckDB niedostępny na maszynie deweloperskiej (brak AVX2) → blokujące dla portfolio-webapp-S1, patrz Dependencies and risks w 01-story.md.
 - Generowanie raportu w trakcie, gdy właściciel klika „generuj” drugi raz zanim pierwszy się skończy → druga prośba czeka na wynik pierwszej, nie odpala równoległego drugiego wywołania LLM dla tego samego snapshotu (unika podwójnego zużycia limitu/kosztu).
+- Agregat bez żadnych członków → wartość 0, widoczny w interfejsie, nie błąd.
+- Instrument będący członkiem agregatu znika przy kolejnym imporcie (np. sprzedany) → agregat po prostu go nie uwzględnia w sumie, bez błędu; klucz członkostwa (REQ-065) zostaje, gdyby instrument wrócił.
+- Próba dodania agregatu do samego siebie pośrednio (A zawiera B, B ma dostać A jako członka) → REQ-062, odrzucone.
+- Ten sam instrument dodany bezpośrednio do agregatu A i pośrednio przez zagnieżdżony w A agregat B → REQ-061, liczony raz w wartości A.
 
 ## Non-functional requirements
 
@@ -136,6 +168,9 @@ Position (Bossa, wyliczona przez replay) dziedziczy walidację P1's `canonical.P
 | AC-5 | REQ-020 |
 | AC-6 | REQ-004 |
 | AC-7 | REQ-050 |
+| AC-8 | REQ-060 |
+| AC-9 | REQ-061 |
+| AC-10 | REQ-062 |
 
 ## Open questions
 
