@@ -1,4 +1,5 @@
 import json
+import threading
 import uuid
 from io import BytesIO
 from pathlib import Path
@@ -14,9 +15,20 @@ from portfolio_xray._fixtures import build_synthetic_xtb_workbook  # noqa: E402
 
 from fin_ai_lab.core.llm.fake import FakeLlmClient  # noqa: E402
 from fin_ai_lab.portfolio_webapp.api import create_app  # noqa: E402
+from fin_ai_lab.portfolio_xray.identification.openfigi import Identification  # noqa: E402
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry  # noqa: E402
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+class _StubOpenFigiClient:
+    def __init__(self, identification: Identification) -> None:
+        self._identification = identification
+
+    async def resolve_by_isin(
+        self, isin: str, currency: str, broker_market: str | None = None
+    ) -> Identification:
+        return self._identification
 
 
 def _build_unrecognized_workbook() -> bytes:
@@ -334,3 +346,164 @@ def test_approve_import_config_rejects_malformed_config(tmp_path: Path) -> None:
         )
 
         assert response.status_code == 422
+
+
+def _manual_position_payload(**overrides: object) -> dict:
+    body = {
+        "instrument_name": "Widget Co",
+        "isin": None,
+        "symbol": "WDG",
+        "asset_class": "equity",
+        "quantity": "10",
+        "avg_cost": "5.5",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_create_manual_position_values_at_cost_and_lists_it(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+
+    response = client.post(
+        f"/api/portfolios/{portfolio_id}/positions", json=_manual_position_payload()
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["broker"] == "manual"
+    assert body["market_value"] == "55.00000000"  # 10 * 5.5, valued at cost on creation
+    assert body["return_pct"] == "0.0"
+
+    list_response = client.get(f"/api/portfolios/{portfolio_id}/positions")
+    assert [p["instrument_name"] for p in list_response.json()] == ["Widget Co"]
+
+
+def test_create_manual_position_for_missing_portfolio_returns_404(client: TestClient) -> None:
+    response = client.post(
+        f"/api/portfolios/{uuid.uuid4()}/positions", json=_manual_position_payload()
+    )
+
+    assert response.status_code == 404
+
+
+def test_create_manual_position_resolves_isin_through_openfigi(tmp_path: Path) -> None:
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG000BLNNH6",
+            ticker="AAPL",
+            exchange_code="US",
+            identification_rule="only listing in currency",
+        )
+    )
+    app = create_app(db_path=tmp_path / "test.duckdb", openfigi_client_factory=lambda: stub)
+    with TestClient(app) as client:
+        portfolio_id = _create_portfolio(client)
+
+        response = client.post(
+            f"/api/portfolios/{portfolio_id}/positions",
+            json=_manual_position_payload(isin="US0378331005"),
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["resolution_status"] == "resolved"
+        assert body["ticker"] == "AAPL"
+
+
+def test_manual_snapshot_excluded_from_snapshots_history(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+    client.post(f"/api/portfolios/{portfolio_id}/positions", json=_manual_position_payload())
+
+    response = client.get(f"/api/portfolios/{portfolio_id}/snapshots")
+
+    assert response.status_code == 200
+    brokers = {s["broker"] for s in response.json()}
+    assert brokers == {"xtb"}
+
+
+def test_update_manual_position_lets_owner_override_market_value(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    created = client.post(
+        f"/api/portfolios/{portfolio_id}/positions", json=_manual_position_payload()
+    ).json()
+
+    response = client.put(
+        f"/api/portfolios/{portfolio_id}/positions/{created['id']}",
+        json=_manual_position_payload(quantity="10", avg_cost="5.5") | {"market_value": "80"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["market_value"] == "80.00000000"
+    assert body["return_pct"] == "45.5"  # (80 - 55) / 55 * 100
+
+
+def test_update_manual_position_for_missing_id_returns_404(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+
+    response = client.put(
+        f"/api/portfolios/{portfolio_id}/positions/{uuid.uuid4()}",
+        json=_manual_position_payload() | {"market_value": "80"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_update_position_from_file_import_returns_404(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    imported = _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20").json()
+    imported_position_id = imported["snapshot"]["positions"][0]["id"]
+
+    response = client.put(
+        f"/api/portfolios/{portfolio_id}/positions/{imported_position_id}",
+        json=_manual_position_payload() | {"market_value": "80"},
+    )
+
+    # Not editable per REQ-011 -- treated as "not a manual position here",
+    # same as any other id that isn't one.
+    assert response.status_code == 404
+
+
+def test_delete_manual_position_removes_it(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    created = client.post(
+        f"/api/portfolios/{portfolio_id}/positions", json=_manual_position_payload()
+    ).json()
+
+    response = client.delete(f"/api/portfolios/{portfolio_id}/positions/{created['id']}")
+
+    assert response.status_code == 204
+    assert client.get(f"/api/portfolios/{portfolio_id}/positions").json() == []
+
+    second_delete = client.delete(f"/api/portfolios/{portfolio_id}/positions/{created['id']}")
+    assert second_delete.status_code == 404
+
+
+def test_concurrent_requests_do_not_corrupt_each_others_results(client: TestClient) -> None:
+    # PortfolioDetail now fires GET snapshots and GET positions concurrently
+    # on every mount. Reproduced without the fix in _get_db: sync endpoints
+    # run in a threadpool, and two threads calling execute()/fetchall() on
+    # the same shared DuckDB connection tear each other's result rows,
+    # surfacing as a spurious 404 or a raw ValueError from unpacking a
+    # mismatched row shape.
+    portfolio_id = _create_portfolio(client)
+    _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+    status_codes: list[int] = []
+
+    def hit(path: str) -> None:
+        response = client.get(f"/api/portfolios/{portfolio_id}/{path}")
+        status_codes.append(response.status_code)
+
+    for _ in range(20):
+        threads = [
+            threading.Thread(target=hit, args=(path,))
+            for path in ("snapshots", "positions", "snapshots", "positions")
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert status_codes == [200] * len(status_codes)

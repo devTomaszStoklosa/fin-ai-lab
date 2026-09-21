@@ -34,6 +34,19 @@ export type Position = {
   return_pct: string | null
 }
 
+export type PositionCreate = {
+  instrument_name: string
+  isin: string | null
+  symbol: string | null
+  asset_class: string
+  quantity: string
+  avg_cost: string
+}
+
+export type PositionUpdate = PositionCreate & {
+  market_value: string
+}
+
 export type Snapshot = {
   id: string
   portfolio_id: string
@@ -164,6 +177,39 @@ export async function proposeImportConfig(
     throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
   }
   return body as ProposePreview
+}
+
+export function fetchPositions(portfolioId: string): Promise<Position[]> {
+  return fetch(`/api/portfolios/${portfolioId}/positions`).then((r) => asJson(r))
+}
+
+export function createPosition(portfolioId: string, payload: PositionCreate): Promise<Position> {
+  return fetch(`/api/portfolios/${portfolioId}/positions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then((r) => asJson(r))
+}
+
+export function updatePosition(
+  portfolioId: string,
+  positionId: string,
+  payload: PositionUpdate,
+): Promise<Position> {
+  return fetch(`/api/portfolios/${portfolioId}/positions/${positionId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then((r) => asJson(r))
+}
+
+export async function deletePosition(portfolioId: string, positionId: string): Promise<void> {
+  const response = await fetch(`/api/portfolios/${portfolioId}/positions/${positionId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`)
+  }
 }
 
 export async function approveImportConfig(

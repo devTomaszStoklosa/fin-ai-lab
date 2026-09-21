@@ -22,8 +22,10 @@ from fin_ai_lab.portfolio_webapp.schemas import (
     ImportResponse,
     PortfolioCreate,
     PortfolioOut,
+    PositionCreate,
     PositionOut,
     PositionPreviewOut,
+    PositionUpdate,
     ProposePreview,
     SnapshotOut,
 )
@@ -239,6 +241,71 @@ def create_app(
             for row in repository.list_snapshots(connection, portfolio_id)
         ]
 
+    @app.get("/api/portfolios/{portfolio_id}/positions", response_model=list[PositionOut])
+    def list_manual_positions(
+        portfolio_id: UUID,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> list[PositionOut]:
+        if repository.get_portfolio(connection, portfolio_id) is None:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+
+        snapshot = repository.find_manual_snapshot(connection, portfolio_id)
+        if snapshot is None:
+            return []
+        return [_to_position_out(row) for row in repository.list_positions(connection, snapshot[0])]
+
+    @app.post(
+        "/api/portfolios/{portfolio_id}/positions", response_model=PositionOut, status_code=201
+    )
+    async def create_manual_position(
+        portfolio_id: UUID,
+        payload: PositionCreate,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> PositionOut:
+        portfolio = repository.get_portfolio(connection, portfolio_id)
+        if portfolio is None:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+
+        # Valued at cost on creation (the owner just bought it, no other
+        # price is known yet) -- editable to a real current value afterwards
+        # via PUT, which is where market_value stops being auto-derived.
+        position = await _build_manual_position(
+            payload,
+            account_type=_resolve_account_type(portfolio),
+            market_value=payload.quantity * payload.avg_cost,
+            openfigi_client=openfigi_client_factory(),
+        )
+        snapshot = repository.get_or_create_manual_snapshot(connection, portfolio_id)
+        row = repository.insert_position(connection, snapshot_id=snapshot[0], position=position)
+        return _to_position_out(row)
+
+    @app.put("/api/portfolios/{portfolio_id}/positions/{position_id}", response_model=PositionOut)
+    async def update_manual_position(
+        portfolio_id: UUID,
+        position_id: UUID,
+        payload: PositionUpdate,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> PositionOut:
+        portfolio = _require_manual_position(connection, portfolio_id, position_id)
+
+        position = await _build_manual_position(
+            payload,
+            account_type=_resolve_account_type(portfolio),
+            market_value=payload.market_value,
+            openfigi_client=openfigi_client_factory(),
+        )
+        row = repository.update_position(connection, position_id=position_id, position=position)
+        return _to_position_out(row)
+
+    @app.delete("/api/portfolios/{portfolio_id}/positions/{position_id}", status_code=204)
+    def delete_manual_position(
+        portfolio_id: UUID,
+        position_id: UUID,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> None:
+        _require_manual_position(connection, portfolio_id, position_id)
+        repository.delete_position(connection, position_id)
+
     return app
 
 
@@ -267,6 +334,69 @@ def _resolve_account_type(portfolio: PortfolioRow) -> str:
     if account_type not in get_args(AccountType):
         return "regular"
     return account_type
+
+
+def _require_manual_position(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID, position_id: UUID
+) -> PortfolioRow:
+    # 404s a position from a file import too (REQ-011 forbids editing it,
+    # and the frontend never offers the action for one) -- not a path real
+    # use reaches, just a defensive backstop.
+    portfolio = repository.get_portfolio(connection, portfolio_id)
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
+    position = repository.get_position(connection, position_id)
+    if position is None or manual_snapshot is None or position[1] != manual_snapshot[0]:
+        raise HTTPException(status_code=404, detail="Position not found")
+
+    return portfolio
+
+
+async def _build_manual_position(
+    payload: PositionCreate,
+    *,
+    account_type: str,
+    market_value: Decimal,
+    openfigi_client: OpenFigiClient | None,
+) -> Position:
+    position = Position(
+        broker=repository.MANUAL_BROKER,
+        account_type=account_type,
+        instrument_name=payload.instrument_name,
+        isin=payload.isin,
+        symbol=payload.symbol,
+        asset_class=payload.asset_class,
+        quantity=payload.quantity,
+        avg_cost=payload.avg_cost,
+        cost_currency="PLN",
+        market_value=market_value,
+        market_currency="PLN",
+        valuation_date=date_type.today(),
+    )
+    return await _resolve_manual_identification(position, openfigi_client)
+
+
+async def _resolve_manual_identification(
+    position: Position, openfigi_client: OpenFigiClient | None
+) -> Position:
+    # Mirrors service.py's own (module-private) _resolve_identifications for
+    # a single position -- same reasoning as _flag_injection_warnings: that
+    # function is P1-private, portfolio_webapp may only reach its public
+    # surface (docs/ARCHITECTURE.md rule 6).
+    if openfigi_client is None or position.isin is None:
+        return position
+    identification = await openfigi_client.resolve_by_isin(position.isin, "PLN", None)
+    return position.model_copy(
+        update={
+            "resolution_status": identification.status,
+            "figi": identification.figi,
+            "ticker": identification.ticker,
+            "exchange_code": identification.exchange_code,
+            "identification_rule": identification.identification_rule,
+        }
+    )
 
 
 async def _import_and_persist(
@@ -339,7 +469,12 @@ def _flag_injection_warnings(sheets: dict[str, list[tuple[object, ...]]]) -> lis
 
 
 def _get_db(request: Request) -> duckdb.DuckDBPyConnection:
-    return request.app.state.db
+    # cursor(), not the shared connection directly: FastAPI runs sync
+    # endpoints in a threadpool, and concurrent execute() calls on one
+    # DuckDB connection from different threads corrupt each other's result
+    # rows (reproduced). cursor() shares the same database but is
+    # independent per call.
+    return request.app.state.db.cursor()
 
 
 def _to_portfolio_out(row: PortfolioRow) -> PortfolioOut:
