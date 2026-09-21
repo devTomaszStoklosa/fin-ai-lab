@@ -35,7 +35,7 @@ Jako inwestor z pozycjami u kilku brokerów chcę wgrać ich eksporty i dostać 
 - Rekomendacje, optymalizacja i rebalancing portfela.
 - Historia transakcji, XIRR, podatki — później (DuckDB + text-to-SQL).
 - Pobieranie danych bezpośrednio z kont brokerskich (logowanie, API brokerów).
-- Interfejs graficzny — CLI i raport w markdown.
+- Interfejs graficzny w P1 samym — CLI i raport w markdown pozostają jedynym interfejsem tego projektu. Od epiku `portfolio-webapp` (`docs/specs/portfolio-webapp/`) funkcje P1 są też dostępne przez web UI tamtego epiku, wywoływane przez `service.py` bez zmian w kodzie P1 — na tej samej zasadzie, na jakiej P5 już reużywa P1 jako bibliotekę.
 
 ## Priority
 
