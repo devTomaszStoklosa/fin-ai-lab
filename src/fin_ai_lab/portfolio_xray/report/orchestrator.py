@@ -6,7 +6,7 @@ from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
-from fin_ai_lab.portfolio_xray.metrics.price_history import fetch_price_history
+from fin_ai_lab.portfolio_xray.metrics.price_history import fetch_price_history, to_yahoo_ticker
 from fin_ai_lab.portfolio_xray.metrics.risk import compute_risk_metrics
 from fin_ai_lab.portfolio_xray.metrics.weights import compute_weights
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
@@ -76,10 +76,16 @@ async def generate_report(
         position = weighted.position
         weight_by_key[key] = float(weighted.weight)
 
-        # OpenFIGI's exchange ticker when resolved, else the broker's own
-        # symbol as a best-effort fallback (known MVP limitation for
-        # ISIN-less positions, e.g. XTB CFDs — 03-design.md P1-S3 note).
-        ticker = position.ticker or position.symbol
+        # OpenFIGI's exchange ticker + exchange, translated to yfinance's
+        # own suffix convention, when resolved; else the broker's own
+        # symbol as a best-effort fallback (still unresolved for some
+        # ISIN-less positions -- issue #192 covers only the exchanges
+        # actually observed so far).
+        ticker = (
+            to_yahoo_ticker(position.ticker, position.exchange_code)
+            if position.ticker is not None
+            else position.symbol
+        )
         price_history_by_key[key] = fetch_price_history(ticker) if ticker else None
 
         category = await classify_sector(position, llm_client, prompt_registry, model)

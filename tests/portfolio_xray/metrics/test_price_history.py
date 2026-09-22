@@ -11,6 +11,7 @@ pd = pytest.importorskip("pandas")
 from fin_ai_lab.portfolio_xray.metrics.price_history import (  # noqa: E402
     fetch_price_history,
     price_change_ratio,
+    to_yahoo_ticker,
 )
 
 
@@ -141,3 +142,29 @@ def test_price_change_ratio_returns_none_for_empty_history(
     ratio = price_change_ratio("UNKNOWN", date(2026, 1, 1), cache_dir=tmp_path)
 
     assert ratio is None
+
+
+def test_price_change_ratio_drops_trailing_nan_close(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Yahoo can return NaN for the most recent day before it finalizes --
+    # must use the last REAL close (50.0), not the NaN one.
+    index = pd.date_range("2026-01-01", periods=6)
+    history_df = pd.DataFrame(
+        {"Close": [10.0, 20.0, 30.0, 40.0, 50.0, float("nan")]}, index=index
+    )
+    _install_fake_yfinance(monkeypatch, history_df)
+
+    ratio = price_change_ratio("ISAC.L", date(2026, 1, 2), cache_dir=tmp_path)
+
+    assert ratio == Decimal("2.5")  # 50.0 / 20.0
+
+
+def test_to_yahoo_ticker_appends_mapped_suffix() -> None:
+    assert to_yahoo_ticker("ISAC", "LN") == "ISAC.L"
+    assert to_yahoo_ticker("ATR", "PW") == "ATR.WA"
+
+
+def test_to_yahoo_ticker_returns_bare_ticker_for_unmapped_exchange() -> None:
+    assert to_yahoo_ticker("AAPL", "US") == "AAPL"
+    assert to_yahoo_ticker("AAPL", None) == "AAPL"

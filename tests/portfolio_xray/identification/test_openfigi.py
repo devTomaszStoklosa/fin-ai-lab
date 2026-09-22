@@ -83,6 +83,37 @@ async def test_resolve_by_isin_ambiguous_when_broker_market_matches_none(tmp_pat
     assert identification.status == "ambiguous"
 
 
+async def test_resolve_by_ticker_returns_resolved_for_single_match(tmp_path: Path) -> None:
+    match = {"figi": "BBG00265DDD0", "ticker": "ISAC", "exchCode": "LN", "securityType": "ETP"}
+    client = _client_with_response([{"data": [match]}], tmp_path)
+
+    identification = await client.resolve_by_ticker("ISAC", "LN")
+
+    assert identification.status == "resolved"
+    assert identification.figi == "BBG00265DDD0"
+    assert identification.exchange_code == "LN"
+    assert identification.identification_rule == "ticker and exchange"
+
+
+async def test_resolve_by_ticker_returns_unresolved_on_no_match(tmp_path: Path) -> None:
+    client = _client_with_response([{"warning": "No identifier found."}], tmp_path)
+
+    identification = await client.resolve_by_ticker("NOSUCHTICKER", "LN")
+
+    assert identification.status == "unresolved"
+
+
+async def test_resolve_by_ticker_is_ambiguous_for_multiple_matches(tmp_path: Path) -> None:
+    client = _client_with_response(
+        [{"data": [{"figi": "BBG1", "exchCode": "LN"}, {"figi": "BBG2", "exchCode": "LN"}]}],
+        tmp_path,
+    )
+
+    identification = await client.resolve_by_ticker("X", "LN")
+
+    assert identification.status == "ambiguous"
+
+
 async def test_api_key_is_sent_as_header_when_provided(tmp_path: Path) -> None:
     seen: dict = {}
 

@@ -45,6 +45,12 @@ def price_change_ratio(ticker: str, since: date, cache_dir: Path = CACHE_DIR) ->
     history = fetch_price_history(ticker, cache_dir=cache_dir)
     if history is None or history.empty:
         return None
+    # The most recent trading day can come back as NaN before Yahoo
+    # finalizes it -- drop it rather than let it poison the ratio (same
+    # dropna() risk.py already relies on for its own use of this data).
+    history = history.dropna()
+    if history.empty:
+        return None
 
     closes_by_date = {timestamp.date(): value for timestamp, value in history.items()}
     eligible_dates = [d for d in closes_by_date if d <= since]
@@ -57,6 +63,18 @@ def price_change_ratio(ticker: str, since: date, cache_dir: Path = CACHE_DIR) ->
 
     latest_close = history.iloc[-1]
     return Decimal(str(latest_close)) / Decimal(str(reference_close))
+
+
+# OpenFIGI's Bloomberg-style exchange code -> Yahoo Finance's own ticker
+# suffix. Only the exchanges this repo's imports have actually resolved to
+# are mapped (verified live: ISAC.L, ATR.WA both return real price history)
+# -- same "observed data only" rule as service.py's XTB suffix table.
+_OPENFIGI_EXCHANGE_TO_YAHOO_SUFFIX = {"LN": "L", "PW": "WA"}
+
+
+def to_yahoo_ticker(ticker: str, exchange_code: str | None) -> str:
+    suffix = _OPENFIGI_EXCHANGE_TO_YAHOO_SUFFIX.get(exchange_code or "")
+    return f"{ticker}.{suffix}" if suffix else ticker
 
 
 def _slug(ticker: str) -> str:

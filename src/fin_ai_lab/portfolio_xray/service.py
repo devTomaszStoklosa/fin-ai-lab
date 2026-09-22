@@ -120,6 +120,23 @@ async def import_bossa_csv(
     return ImportResult(positions=positions, errors=[], warnings=[])
 
 
+# XTB's "Open Positions" export has no ISIN column at all -- its own ticker
+# suffix ("ISAC.UK") isn't a standard exchange code either, so it needs
+# translating before an OpenFIGI ticker lookup. Only the two markets
+# actually observed in real XTB data are mapped, same "observed data only"
+# rule as importer.py's CATEGORY_TO_ASSET_CLASS -- deliberately deferred
+# fallback from 03-design.md, picked up for issue #192.
+_XTB_SUFFIX_TO_OPENFIGI_EXCHANGE = {"UK": "LN", "PL": "PW"}
+
+
+def _xtb_ticker_and_exchange(symbol: str) -> tuple[str, str] | None:
+    base, dot, suffix = symbol.rpartition(".")
+    if not dot or not base:
+        return None
+    exch_code = _XTB_SUFFIX_TO_OPENFIGI_EXCHANGE.get(suffix)
+    return (base, exch_code) if exch_code is not None else None
+
+
 async def _resolve_identifications(
     positions: list[Position],
     openfigi_client: OpenFigiClient | None,
@@ -130,13 +147,21 @@ async def _resolve_identifications(
 
     resolved = []
     for position in positions:
-        if position.isin is None:
+        if position.isin is not None:
+            currency = position.market_currency or position.cost_currency or "PLN"
+            identification = await openfigi_client.resolve_by_isin(
+                position.isin, currency, broker_market
+            )
+        elif position.broker == "xtb" and position.symbol is not None:
+            split = _xtb_ticker_and_exchange(position.symbol)
+            if split is None:
+                resolved.append(position)
+                continue
+            identification = await openfigi_client.resolve_by_ticker(*split)
+        else:
             resolved.append(position)
             continue
-        currency = position.market_currency or position.cost_currency or "PLN"
-        identification = await openfigi_client.resolve_by_isin(
-            position.isin, currency, broker_market
-        )
+
         resolved.append(
             position.model_copy(
                 update={
