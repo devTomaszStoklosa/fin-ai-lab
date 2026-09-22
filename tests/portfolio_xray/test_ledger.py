@@ -147,3 +147,66 @@ def test_attach_current_market_values_uses_latest_close(monkeypatch: pytest.Monk
 
     assert updated[0].market_value == Decimal("101.5") * Decimal("6")
     assert updated[0].market_currency == "PLN"
+
+
+def test_attach_current_market_values_drops_trailing_nan_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Yahoo can return NaN for the most recent day before it finalizes --
+    # must use the last REAL close (101.5), not NaN (issue #193).
+    history = pd.Series(
+        [98.0, 99.0, 101.5, float("nan")],
+        index=pd.to_datetime(["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"]),
+    )
+    monkeypatch.setattr(
+        "fin_ai_lab.portfolio_xray.ledger.fetch_price_history", lambda ticker: history
+    )
+    position = Position(
+        broker="bossa",
+        account_type="regular",
+        instrument_name="SYNTHA",
+        isin=SYNTH_A_ISIN,
+        symbol=None,
+        ticker="SYNA.WA",
+        asset_class="other",
+        quantity=Decimal("6"),
+        avg_cost=Decimal("100.5"),
+        cost_currency="PLN",
+        market_value=None,
+        market_currency=None,
+        valuation_date=date(2026, 9, 15),
+    )
+
+    updated = attach_current_market_values([position])
+
+    assert updated[0].market_value == Decimal("101.5") * Decimal("6")
+
+
+def test_attach_current_market_values_skips_when_history_is_all_nan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = pd.Series(
+        [float("nan"), float("nan")], index=pd.to_datetime(["2026-09-01", "2026-09-02"])
+    )
+    monkeypatch.setattr(
+        "fin_ai_lab.portfolio_xray.ledger.fetch_price_history", lambda ticker: history
+    )
+    position = Position(
+        broker="bossa",
+        account_type="regular",
+        instrument_name="SYNTHA",
+        isin=SYNTH_A_ISIN,
+        symbol=None,
+        ticker="SYNA.WA",
+        asset_class="other",
+        quantity=Decimal("6"),
+        avg_cost=Decimal("100.5"),
+        cost_currency="PLN",
+        market_value=None,
+        market_currency=None,
+        valuation_date=date(2026, 9, 15),
+    )
+
+    updated = attach_current_market_values([position])
+
+    assert updated[0].market_value is None
