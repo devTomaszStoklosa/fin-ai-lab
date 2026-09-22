@@ -116,3 +116,19 @@ class ReportOut(BaseModel):
     model: str
     cost_usd: Decimal
     content_md: str
+
+
+class AggregatorCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    member_instrument_keys: list[str] = []
+    member_aggregator_ids: list[UUID] = []
+
+
+class AggregatorOut(BaseModel):
+    id: UUID
+    portfolio_id: UUID
+    name: str
+    member_instrument_keys: list[str]
+    member_aggregator_ids: list[UUID]
+    value: Decimal
+    base_currency: str

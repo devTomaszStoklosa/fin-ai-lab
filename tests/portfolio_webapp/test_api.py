@@ -887,3 +887,100 @@ def test_concurrent_report_generation_only_calls_llm_once(tmp_path: Path) -> Non
         # only one real generation sequence (one FakeLlmClient) should exist.
         assert len(created) == 1
         assert {r["id"] for r in results} == {results[0]["id"]}
+
+
+def test_create_aggregator_with_no_members_has_zero_value(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+
+    response = client.post(
+        f"/api/portfolios/{portfolio_id}/aggregators", json={"name": "Pusty"}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["value"] == "0.00"
+    assert body["base_currency"] == "PLN"
+
+
+def test_aggregator_value_sums_direct_instrument_members(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+    response = client.post(
+        f"/api/portfolios/{portfolio_id}/aggregators",
+        json={"name": "Wszystko", "member_instrument_keys": ["xtb:ISAC.UK", "xtb:ATR.PL"]},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["value"] == "2798.71"  # 2745.41 + 53.30
+
+
+def test_aggregator_value_dedups_instrument_reachable_two_ways(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+    child = client.post(
+        f"/api/portfolios/{portfolio_id}/aggregators",
+        json={"name": "ISAC osobno", "member_instrument_keys": ["xtb:ISAC.UK"]},
+    ).json()
+
+    parent = client.post(
+        f"/api/portfolios/{portfolio_id}/aggregators",
+        json={
+            "name": "Razem",
+            "member_instrument_keys": ["xtb:ISAC.UK"],  # same instrument, direct
+            "member_aggregator_ids": [child["id"]],  # and via the nested child
+        },
+    ).json()
+
+    assert parent["value"] == "2745.41"  # not doubled (REQ-061)
+
+
+def test_list_aggregators_unknown_portfolio_returns_404(client: TestClient) -> None:
+    response = client.get(f"/api/portfolios/{uuid.uuid4()}/aggregators")
+
+    assert response.status_code == 404
+
+
+def test_create_aggregator_rejects_unknown_member_aggregator_id(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+
+    response = client.post(
+        f"/api/portfolios/{portfolio_id}/aggregators",
+        json={"name": "Broken", "member_aggregator_ids": [str(uuid.uuid4())]},
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_aggregator_rejects_indirect_cycle(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    a = client.post(f"/api/portfolios/{portfolio_id}/aggregators", json={"name": "A"}).json()
+    b = client.post(
+        f"/api/portfolios/{portfolio_id}/aggregators",
+        json={"name": "B", "member_aggregator_ids": [a["id"]]},
+    ).json()
+
+    # A already sits inside B -- adding B into A would close the loop.
+    response = client.put(
+        f"/api/portfolios/{portfolio_id}/aggregators/{a['id']}",
+        json={"name": "A", "member_aggregator_ids": [b["id"]]},
+    )
+
+    assert response.status_code == 422
+
+
+def test_delete_aggregator_removes_dangling_reference(client: TestClient) -> None:
+    portfolio_id = _create_portfolio(client)
+    a = client.post(f"/api/portfolios/{portfolio_id}/aggregators", json={"name": "A"}).json()
+    b = client.post(
+        f"/api/portfolios/{portfolio_id}/aggregators",
+        json={"name": "B", "member_aggregator_ids": [a["id"]]},
+    ).json()
+
+    delete_response = client.delete(f"/api/portfolios/{portfolio_id}/aggregators/{a['id']}")
+    assert delete_response.status_code == 204
+
+    remaining = client.get(f"/api/portfolios/{portfolio_id}/aggregators").json()
+    updated_b = next(agg for agg in remaining if agg["id"] == b["id"])
+    assert updated_b["member_aggregator_ids"] == []

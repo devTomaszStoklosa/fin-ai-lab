@@ -111,6 +111,22 @@ export type Report = {
   content_md: string
 }
 
+export type Aggregator = {
+  id: string
+  portfolio_id: string
+  name: string
+  member_instrument_keys: string[]
+  member_aggregator_ids: string[]
+  value: string
+  base_currency: string
+}
+
+export type AggregatorCreate = {
+  name: string
+  member_instrument_keys: string[]
+  member_aggregator_ids: string[]
+}
+
 // The exact string P1's service.import_file returns when a file's format
 // signature matches no approved config -- the propose/approve flow only
 // makes sense to offer for this specific failure, not any import error.
@@ -280,4 +296,53 @@ export async function approveImportConfig(
     throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
   }
   return body as { snapshot: Snapshot; warnings: string[] }
+}
+
+async function asJsonOrDetailError<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    // Same reasoning as generateReport: a raised HTTPException comes back
+    // as {detail: "..."} with a message worth showing (e.g. a rejected
+    // cycle, REQ-062) -- fall back to statusText only when the body isn't
+    // that shape.
+    const body = await response.json().catch(() => null)
+    const detail = body && typeof body.detail === 'string' ? body.detail : response.statusText
+    throw new Error(detail)
+  }
+  return response.json()
+}
+
+export function fetchAggregators(portfolioId: string): Promise<Aggregator[]> {
+  return fetch(`/api/portfolios/${portfolioId}/aggregators`).then((r) => asJson(r))
+}
+
+export function createAggregator(
+  portfolioId: string,
+  payload: AggregatorCreate,
+): Promise<Aggregator> {
+  return fetch(`/api/portfolios/${portfolioId}/aggregators`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then((r) => asJsonOrDetailError(r))
+}
+
+export function updateAggregator(
+  portfolioId: string,
+  aggregatorId: string,
+  payload: AggregatorCreate,
+): Promise<Aggregator> {
+  return fetch(`/api/portfolios/${portfolioId}/aggregators/${aggregatorId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then((r) => asJsonOrDetailError(r))
+}
+
+export async function deleteAggregator(portfolioId: string, aggregatorId: string): Promise<void> {
+  const response = await fetch(`/api/portfolios/${portfolioId}/aggregators/${aggregatorId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`)
+  }
 }

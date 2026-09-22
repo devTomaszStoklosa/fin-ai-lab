@@ -18,8 +18,17 @@ from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_webapp import db, repository
+from fin_ai_lab.portfolio_webapp.aggregators import (
+    Aggregator,
+    CycleError,
+    instrument_key,
+    resolve_value,
+    validate_no_cycle,
+)
 from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow, SnapshotRow
 from fin_ai_lab.portfolio_webapp.schemas import (
+    AggregatorCreate,
+    AggregatorOut,
     ImportResponse,
     MetricsOut,
     PortfolioCreate,
@@ -413,6 +422,94 @@ def create_app(
                 key: _as_percent(value) for key, value in weights.allocation_by_currency.items()
             },
         )
+
+    @app.get("/api/portfolios/{portfolio_id}/aggregators", response_model=list[AggregatorOut])
+    async def list_portfolio_aggregators(
+        portfolio_id: UUID,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> list[AggregatorOut]:
+        if repository.get_portfolio(connection, portfolio_id) is None:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+
+        all_aggregators = repository.list_aggregators(connection, portfolio_id)
+        all_by_id = {a.id: a for a in all_aggregators}
+        values_by_key = await _instrument_values_by_key(
+            connection, portfolio_id, fx_client_factory()
+        )
+        return [_to_aggregator_out(a, all_by_id, values_by_key) for a in all_aggregators]
+
+    @app.post(
+        "/api/portfolios/{portfolio_id}/aggregators",
+        response_model=AggregatorOut,
+        status_code=201,
+    )
+    async def create_portfolio_aggregator(
+        portfolio_id: UUID,
+        payload: AggregatorCreate,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> AggregatorOut:
+        if repository.get_portfolio(connection, portfolio_id) is None:
+            raise HTTPException(status_code=404, detail="Portfolio not found")
+        _require_existing_aggregators(connection, portfolio_id, payload.member_aggregator_ids)
+
+        created = repository.create_aggregator(
+            connection,
+            portfolio_id=portfolio_id,
+            name=payload.name,
+            member_instrument_keys=payload.member_instrument_keys,
+            member_aggregator_ids=payload.member_aggregator_ids,
+        )
+        all_aggregators = repository.list_aggregators(connection, portfolio_id)
+        all_by_id = {a.id: a for a in all_aggregators}
+        values_by_key = await _instrument_values_by_key(
+            connection, portfolio_id, fx_client_factory()
+        )
+        return _to_aggregator_out(created, all_by_id, values_by_key)
+
+    @app.put(
+        "/api/portfolios/{portfolio_id}/aggregators/{aggregator_id}",
+        response_model=AggregatorOut,
+    )
+    async def update_portfolio_aggregator(
+        portfolio_id: UUID,
+        aggregator_id: UUID,
+        payload: AggregatorCreate,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> AggregatorOut:
+        _require_own_aggregator(connection, portfolio_id, aggregator_id)
+        _require_existing_aggregators(connection, portfolio_id, payload.member_aggregator_ids)
+
+        all_aggregators = repository.list_aggregators(connection, portfolio_id)
+        all_by_id = {a.id: a for a in all_aggregators}
+        try:
+            validate_no_cycle(aggregator_id, payload.member_aggregator_ids, all_by_id)
+        except CycleError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        updated = repository.update_aggregator(
+            connection,
+            aggregator_id=aggregator_id,
+            name=payload.name,
+            member_instrument_keys=payload.member_instrument_keys,
+            member_aggregator_ids=payload.member_aggregator_ids,
+        )
+        all_by_id[aggregator_id] = updated
+        values_by_key = await _instrument_values_by_key(
+            connection, portfolio_id, fx_client_factory()
+        )
+        return _to_aggregator_out(updated, all_by_id, values_by_key)
+
+    @app.delete(
+        "/api/portfolios/{portfolio_id}/aggregators/{aggregator_id}",
+        status_code=204,
+    )
+    def delete_portfolio_aggregator(
+        portfolio_id: UUID,
+        aggregator_id: UUID,
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> None:
+        _require_own_aggregator(connection, portfolio_id, aggregator_id)
+        repository.delete_aggregator(connection, aggregator_id)
 
     @app.get(
         "/api/portfolios/{portfolio_id}/report",
@@ -911,6 +1008,59 @@ async def _base_currency_value(position: Position, fx_client: NbpFxClient) -> De
     return await convert_to_base_currency(
         position.market_value, position.market_currency, position.valuation_date, fx_client
     )
+
+
+async def _instrument_values_by_key(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID, fx_client: NbpFxClient
+) -> dict[str, Decimal]:
+    # Live, non-live-price-refreshed value on purpose -- aggregators sum
+    # whatever the portfolio's positions already show (same stored value
+    # metrics.py would use before #190's live-refresh, kept simple here:
+    # an aggregate is a grouping/display concern, not itself a live quote).
+    values: dict[str, Decimal] = {}
+    for row in _current_position_rows(connection, portfolio_id):
+        position = _position_row_to_domain(row)
+        key = instrument_key(position)
+        values[key] = values.get(key, Decimal(0)) + await _base_currency_value(position, fx_client)
+    return values
+
+
+def _to_aggregator_out(
+    aggregator: Aggregator,
+    all_by_id: dict[UUID, Aggregator],
+    values_by_key: dict[str, Decimal],
+) -> AggregatorOut:
+    value = resolve_value(aggregator, all_by_id, values_by_key)
+    return AggregatorOut(
+        id=aggregator.id,
+        portfolio_id=aggregator.portfolio_id,
+        name=aggregator.name,
+        member_instrument_keys=aggregator.member_instrument_keys,
+        member_aggregator_ids=aggregator.member_aggregator_ids,
+        value=value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        base_currency=BASE_CURRENCY,
+    )
+
+
+def _require_existing_aggregators(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID, member_aggregator_ids: list[UUID]
+) -> None:
+    existing_ids = {a.id for a in repository.list_aggregators(connection, portfolio_id)}
+    unknown = [str(mid) for mid in member_aggregator_ids if mid not in existing_ids]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown aggregator id(s) in this portfolio: {', '.join(unknown)}",
+        )
+
+
+def _require_own_aggregator(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID, aggregator_id: UUID
+) -> Aggregator:
+    aggregator = repository.get_aggregator(connection, aggregator_id)
+    if aggregator is None or aggregator.portfolio_id != portfolio_id:
+        raise HTTPException(status_code=404, detail="Aggregator not found")
+    return aggregator
 
 
 def _as_percent(fraction: Decimal) -> Decimal:

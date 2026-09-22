@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import duckdb
 
+from fin_ai_lab.portfolio_webapp.aggregators import Aggregator
 from fin_ai_lab.portfolio_xray.canonical import Position
 
 MANUAL_BROKER = "manual"
@@ -299,3 +300,94 @@ def create_report(
         [report_id, snapshot_id, generated_at, model, cost_usd, content_md],
     )
     return (report_id, snapshot_id, generated_at, model, cost_usd, content_md)
+
+
+def _row_to_aggregator(row: tuple) -> Aggregator:
+    id_, portfolio_id, name, member_instrument_keys, member_aggregator_ids = row
+    return Aggregator(
+        id=id_,
+        portfolio_id=portfolio_id,
+        name=name,
+        member_instrument_keys=list(member_instrument_keys or []),
+        member_aggregator_ids=list(member_aggregator_ids or []),
+    )
+
+
+def create_aggregator(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    portfolio_id: uuid.UUID,
+    name: str,
+    member_instrument_keys: list[str],
+    member_aggregator_ids: list[uuid.UUID],
+) -> Aggregator:
+    aggregator_id = uuid.uuid4()
+    connection.execute(
+        "INSERT INTO aggregators VALUES (?, ?, ?, ?, ?)",
+        [aggregator_id, portfolio_id, name, member_instrument_keys, member_aggregator_ids],
+    )
+    row = get_aggregator(connection, aggregator_id)
+    assert row is not None
+    return row
+
+
+def get_aggregator(
+    connection: duckdb.DuckDBPyConnection, aggregator_id: uuid.UUID
+) -> Aggregator | None:
+    rows = connection.execute(
+        "SELECT id, portfolio_id, name, member_instrument_keys, member_aggregator_ids "
+        "FROM aggregators WHERE id = ?",
+        [aggregator_id],
+    ).fetchall()
+    return _row_to_aggregator(rows[0]) if rows else None
+
+
+def list_aggregators(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: uuid.UUID
+) -> list[Aggregator]:
+    rows = connection.execute(
+        "SELECT id, portfolio_id, name, member_instrument_keys, member_aggregator_ids "
+        "FROM aggregators WHERE portfolio_id = ?",
+        [portfolio_id],
+    ).fetchall()
+    return [_row_to_aggregator(row) for row in rows]
+
+
+def update_aggregator(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    aggregator_id: uuid.UUID,
+    name: str,
+    member_instrument_keys: list[str],
+    member_aggregator_ids: list[uuid.UUID],
+) -> Aggregator:
+    connection.execute(
+        "UPDATE aggregators SET name = ?, member_instrument_keys = ?, "
+        "member_aggregator_ids = ? WHERE id = ?",
+        [name, member_instrument_keys, member_aggregator_ids, aggregator_id],
+    )
+    row = get_aggregator(connection, aggregator_id)
+    assert row is not None
+    return row
+
+
+def delete_aggregator(connection: duckdb.DuckDBPyConnection, aggregator_id: uuid.UUID) -> None:
+    # REQ-064: deleting an aggregator that is itself a member of another one
+    # must not leave a dangling reference in that other aggregator's
+    # member_aggregator_ids -- read-modify-write in Python rather than SQL
+    # array surgery, same "small and explicit" style as the rest of this
+    # module.
+    target = get_aggregator(connection, aggregator_id)
+    if target is not None:
+        for other in list_aggregators(connection, target.portfolio_id):
+            if aggregator_id in other.member_aggregator_ids:
+                update_aggregator(
+                    connection,
+                    aggregator_id=other.id,
+                    name=other.name,
+                    member_instrument_keys=other.member_instrument_keys,
+                    member_aggregator_ids=[
+                        m for m in other.member_aggregator_ids if m != aggregator_id
+                    ],
+                )
+    connection.execute("DELETE FROM aggregators WHERE id = ?", [aggregator_id])

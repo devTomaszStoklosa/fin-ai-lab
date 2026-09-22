@@ -12,6 +12,7 @@ import {
   importFile,
 } from './api'
 import type { Metrics, Portfolio, Position, Report, Snapshot } from './api'
+import Aggregators from './Aggregators'
 import AllocationBars from './AllocationBars'
 import { trimTrailingZeros } from './format'
 import ManualPosition from './ManualPosition'
@@ -53,6 +54,7 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
   const [importErrors, setImportErrors] = useState<string[] | null>(null)
   const [importWarnings, setImportWarnings] = useState<string[] | null>(null)
   const [showPropose, setShowPropose] = useState(false)
+  const [showAggregators, setShowAggregators] = useState(false)
 
   function reloadSnapshots() {
     fetchSnapshots(portfolio.id)
@@ -155,6 +157,10 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
     reloadMetrics()
   }
 
+  if (showAggregators) {
+    return <Aggregators portfolio={portfolio} onBack={() => setShowAggregators(false)} />
+  }
+
   return (
     <div className="content">
       <button type="button" className="back-link" onClick={onBack}>
@@ -169,6 +175,9 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
             <span className="badge muted-badge">{portfolio.account_type}</span>
           )}
         </div>
+        <button type="button" className="btn-ghost agg-nav-link" onClick={() => setShowAggregators(true)}>
+          Agregaty
+        </button>
       </header>
 
       {metrics && metrics.total_value !== null && (
