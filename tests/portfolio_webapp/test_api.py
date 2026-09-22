@@ -82,6 +82,7 @@ def _client_with_fake_llm(tmp_path: Path, responses: dict[str, str]) -> TestClie
         openfigi_client_factory=lambda: None,
         llm_client_factory=lambda: FakeLlmClient(responses),
         parser_registry_factory=lambda: ParserRegistry(parsers_dir=parsers_dir),
+        price_ratio_fetcher=lambda ticker, since: None,
     )
     return TestClient(app)
 
@@ -105,15 +106,30 @@ def _client_with_tracked_llm(
         db_path=tmp_path / "test.duckdb",
         openfigi_client_factory=lambda: None,
         llm_client_factory=factory,
+        price_ratio_fetcher=lambda ticker, since: None,
     )
     return TestClient(app), created
 
 
+def _client_with_price_fetcher(tmp_path: Path, fetcher) -> TestClient:
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: None,
+        price_ratio_fetcher=fetcher,
+    )
+    return TestClient(app)
+
+
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
-    # openfigi_client_factory=lambda: None: no live network call from a unit
-    # test, the same guarantee P1's own tests get from `openfigi_client=None`.
-    app = create_app(db_path=tmp_path / "test.duckdb", openfigi_client_factory=lambda: None)
+    # openfigi_client_factory=lambda: None, price_ratio_fetcher=lambda...None:
+    # no live network call from a unit test, the same guarantee P1's own
+    # tests get from `openfigi_client=None`.
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: None,
+        price_ratio_fetcher=lambda ticker, since: None,
+    )
     with TestClient(app) as test_client:
         yield test_client
 
@@ -236,6 +252,76 @@ def test_two_imports_keep_both_snapshots_ac5(client: TestClient) -> None:
     assert response.status_code == 200
     dates = sorted(s["valuation_date"] for s in response.json())
     assert dates == ["2026-09-19", "2026-09-20"]
+
+
+def test_latest_snapshot_positions_use_live_price_ratio(tmp_path: Path) -> None:
+    with _client_with_price_fetcher(tmp_path, lambda ticker, since: Decimal("2.0")) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/snapshots")
+
+        assert response.status_code == 200
+        positions = response.json()[0]["positions"]
+        by_name = {p["instrument_name"]: p for p in positions}
+        # Stored Value doubled by the fake ratio; return_pct recomputed from
+        # it -- (1 + old_return_fraction) * ratio - 1, algebraically exact.
+        assert by_name["MSCI ACWI"]["market_value"] == "5490.82"  # 2745.41 * 2
+        assert by_name["MSCI ACWI"]["return_pct"] == "218.8"
+        assert by_name["Atrem"]["market_value"] == "106.60"  # 53.3 * 2
+        assert by_name["Atrem"]["return_pct"] == "770.2"
+
+
+def test_older_snapshot_positions_keep_stored_value(tmp_path: Path) -> None:
+    with _client_with_price_fetcher(tmp_path, lambda ticker, since: Decimal("2.0")) as client:
+        portfolio_id = _create_portfolio(client)
+        workbook = build_synthetic_xtb_workbook()
+        _import(client, portfolio_id, workbook, "2026-09-19")
+        _import(client, portfolio_id, workbook, "2026-09-20")
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/snapshots")
+
+        assert response.status_code == 200
+        snapshots_by_date = {s["valuation_date"]: s for s in response.json()}
+        older_acwi = next(
+            p
+            for p in snapshots_by_date["2026-09-19"]["positions"]
+            if p["instrument_name"] == "MSCI ACWI"
+        )
+        # unrefreshed -- history stays exactly as imported.
+        assert Decimal(older_acwi["market_value"]) == Decimal("2745.41")
+
+
+def test_snapshot_positions_fall_back_to_stored_value_when_fetcher_fails(
+    tmp_path: Path,
+) -> None:
+    def failing_fetcher(ticker: str, since):
+        raise RuntimeError("yfinance is unofficial and sometimes blocked")
+
+    with _client_with_price_fetcher(tmp_path, failing_fetcher) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/snapshots")
+
+        assert response.status_code == 200
+        acwi = next(
+            p for p in response.json()[0]["positions"] if p["instrument_name"] == "MSCI ACWI"
+        )
+        assert Decimal(acwi["market_value"]) == Decimal("2745.41")
+
+
+def test_manual_position_market_value_ignores_live_price_ratio(tmp_path: Path) -> None:
+    with _client_with_price_fetcher(tmp_path, lambda ticker, since: Decimal("2.0")) as client:
+        portfolio_id = _create_portfolio(client)
+        # Has a symbol ("WDG"), so it would be refreshed too if the
+        # manual-broker guard in _live_market_value were missing.
+        client.post(f"/api/portfolios/{portfolio_id}/positions", json=_manual_position_payload())
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/positions")
+
+        assert response.status_code == 200
+        assert Decimal(response.json()[0]["market_value"]) == Decimal("55")  # 10 * 5.5
 
 
 def test_import_for_missing_portfolio_returns_404(client: TestClient) -> None:
@@ -556,6 +642,22 @@ def test_metrics_for_xtb_import(client: TestClient) -> None:
     assert body["top5_share"] == "100.0"  # only 2 positions, both in top 5
     assert body["allocation_by_asset_class"] == {"etf": "98.1", "equity": "1.9"}
     assert body["allocation_by_currency"] == {"PLN": "100.0"}
+
+
+def test_metrics_use_live_price_ratio(tmp_path: Path) -> None:
+    with _client_with_price_fetcher(tmp_path, lambda ticker, since: Decimal("2.0")) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/metrics")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert Decimal(body["total_value"]) == Decimal("5597.42")  # 2798.71 * 2
+        # Both positions scaled by the same ratio -- relative
+        # allocation/HHI are unaffected, same as test_metrics_for_xtb_import.
+        assert body["hhi"] == "0.963"
+        assert body["allocation_by_asset_class"] == {"etf": "98.1", "equity": "1.9"}
 
 
 def test_metrics_include_manual_positions(client: TestClient) -> None:
