@@ -9,6 +9,7 @@ import {
   fetchReport,
   fetchSnapshots,
   generateReport,
+  importBossaFile,
   importFile,
 } from './api'
 import type { Metrics, Portfolio, Position, Report, Snapshot } from './api'
@@ -126,7 +127,11 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
     setImportErrors(null)
     setImportWarnings(null)
     setShowPropose(false)
-    importFile(portfolio.id, file, valuationDate)
+    const doImport =
+      portfolio.broker === 'bossa'
+        ? importBossaFile(portfolio.id, file, valuationDate)
+        : importFile(portfolio.id, file, valuationDate)
+    doImport
       .then(({ warnings }) => {
         setImportWarnings(warnings)
         setFile(null)
@@ -266,7 +271,7 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
             Plik
             <input
               type="file"
-              accept=".xlsx"
+              accept={portfolio.broker === 'bossa' ? '.csv' : '.xlsx'}
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </label>

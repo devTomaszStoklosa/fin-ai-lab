@@ -32,7 +32,7 @@ Upstream: 01-story.md
 Import (reużycie P1)
 - REQ-001 (AC-1): When a file is uploaded for a broker with an approved parser configuration in P1's registry, the system shall import it by calling `portfolio_xray.service.import_file` unchanged, not by reimplementing parsing.
 - REQ-002 (AC-1): When a file's format signature matches no approved configuration, the system shall offer the same propose/approve flow P1's CLI uses (`on_new_config_proposed`), adapted to two HTTP calls (propose, then approve or reject) instead of a terminal prompt.
-- REQ-003: When a file is uploaded for Bossa, the system shall reject it with a clear "not yet supported" error until the separate P1 ledger-aggregation capability exists; it shall never attempt to import Bossa's transaction-history file through the row-mapping path.
+- REQ-003: When a CSV is uploaded for Bossa, the system shall import it through P1's ledger-aggregation capability (`ledger.py`), never through the row-mapping/propose-approve path meant for position-snapshot brokers; there is no propose/approve step, since Bossa has exactly one known export shape.
 - REQ-004 (AC-6): The system shall pass through every warning P1's import returns (including suspicious-cell flags from `privacy/injection.py`) to the response body unchanged; it shall not filter or summarize them away.
 
 Ręczne pozycje
@@ -72,7 +72,7 @@ Wybór ścieżki importu wg brokera
 |---|---|---|
 | XTB | stan bieżący (pozycje) | P1's `import_file`, znany format → snapshot |
 | inny, nieznany dotąd broker o kształcie pozycji | stan bieżący (pozycje) | P1's propose/approve przez API |
-| Bossa | historia transakcji | odrzucone do czasu osobnego ticketu w P1 (REQ-003) |
+| Bossa | historia transakcji | P1's `ledger.py`, replay całego ledgera → snapshot (REQ-003, REQ-021) |
 
 Edycja pozycji
 
@@ -139,7 +139,6 @@ Aggregator
 ## Edge and error cases
 
 - Ten sam plik XTB wgrany dwa razy → dwa snapshoty z tym samym `valuation_date`; UI pokazuje oba, nie scala automatycznie (właściciel widzi, że coś się powtórzyło, zamiast cichego scalenia niewłaściwych danych).
-- Plik Bossy wgrany przed ukończeniem osobnego ticketu w P1 → REQ-003, czytelny błąd „format nieobsługiwany”, nie próba importu przez ścieżkę pozycji.
 - Dwa pliki transakcji Bossy z zachodzącymi datami → dedup po hashu wiersza usuwa duplikaty, replay liczy poprawnie (potwierdzone w rozmowie z właścicielem).
 - Dwa pliki transakcji Bossy z luką dat między nimi → system tego nie wykryje; REQ-022 daje właścicielowi zakres dat do ręcznej weryfikacji, ale poprawność ostatecznie zależy od dyscypliny eksportu, nie od kodu.
 - Ręczna pozycja z ISIN, który da się rozpoznać przez OpenFIGI → tak samo jak pozycja z importu (P1's `_resolve_identifications`), nie osobna ścieżka.

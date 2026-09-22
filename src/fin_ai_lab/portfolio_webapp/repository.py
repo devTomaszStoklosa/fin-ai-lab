@@ -6,6 +6,7 @@ import duckdb
 
 from fin_ai_lab.portfolio_webapp.aggregators import Aggregator
 from fin_ai_lab.portfolio_xray.canonical import Position
+from fin_ai_lab.portfolio_xray.ledger import BossaTransaction, dedup_key
 
 MANUAL_BROKER = "manual"
 
@@ -300,6 +301,86 @@ def create_report(
         [report_id, snapshot_id, generated_at, model, cost_usd, content_md],
     )
     return (report_id, snapshot_id, generated_at, model, cost_usd, content_md)
+
+
+def insert_transactions(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    portfolio_id: uuid.UUID,
+    broker: str,
+    transactions: list[BossaTransaction],
+) -> list[BossaTransaction]:
+    """Persists only transactions not already stored for this portfolio
+    (ledger.dedup_key identity, 02-spec.md REQ-021) and returns just the
+    newly-inserted ones, so the caller can report how much of the file was
+    actually new."""
+    existing = {
+        row[0]
+        for row in connection.execute(
+            "SELECT dedup_hash FROM transactions WHERE portfolio_id = ?", [portfolio_id]
+        ).fetchall()
+    }
+    new: list[BossaTransaction] = []
+    for transaction in transactions:
+        dedup_hash = dedup_key(transaction)
+        if dedup_hash in existing:
+            continue
+        # Named columns, not positional VALUES: instrument_name/value/net_value
+        # were added to this table by ALTER TABLE (db.py MIGRATIONS), which
+        # appends physically at the end regardless of where they're listed in
+        # SCHEMA's own CREATE TABLE -- a database migrated through that path
+        # has a different physical column order than a freshly created one,
+        # and positional VALUES silently mismatched them (reproduced live).
+        connection.execute(
+            "INSERT INTO transactions "
+            "(dedup_hash, portfolio_id, broker, executed_at, instrument_name, isin, side, "
+            "quantity, price, value, commission, net_value, currency) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                dedup_hash,
+                portfolio_id,
+                broker,
+                transaction.executed_at,
+                transaction.instrument_name,
+                transaction.isin,
+                transaction.side,
+                transaction.quantity,
+                transaction.price,
+                transaction.value,
+                transaction.commission,
+                transaction.net_value,
+                transaction.currency,
+            ],
+        )
+        existing.add(dedup_hash)
+        new.append(transaction)
+    return new
+
+
+def list_transactions(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: uuid.UUID
+) -> list[BossaTransaction]:
+    rows = connection.execute(
+        "SELECT executed_at, instrument_name, isin, side, quantity, price, value, "
+        "commission, net_value, currency FROM transactions WHERE portfolio_id = ? "
+        "ORDER BY executed_at",
+        [portfolio_id],
+    ).fetchall()
+    return [
+        BossaTransaction(
+            executed_at=row[0],
+            instrument_name=row[1],
+            isin=row[2],
+            side=row[3],
+            quantity=row[4],
+            price=row[5],
+            value=row[6],
+            commission=row[7],
+            net_value=row[8],
+            currency=row[9],
+        )
+        for row in rows
+    ]
 
 
 def _row_to_aggregator(row: tuple) -> Aggregator:

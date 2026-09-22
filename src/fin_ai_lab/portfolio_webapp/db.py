@@ -57,11 +57,14 @@ CREATE TABLE IF NOT EXISTS transactions (
     portfolio_id UUID NOT NULL,
     broker TEXT NOT NULL,
     executed_at TIMESTAMP NOT NULL,
+    instrument_name TEXT NOT NULL,
     isin TEXT NOT NULL,
     side TEXT NOT NULL,
     quantity DECIMAL(24, 8) NOT NULL,
     price DECIMAL(24, 8) NOT NULL,
+    value DECIMAL(24, 8) NOT NULL,
     commission DECIMAL(24, 8) NOT NULL,
+    net_value DECIMAL(24, 8) NOT NULL,
     currency TEXT NOT NULL
 );
 
@@ -92,6 +95,9 @@ CREATE TABLE IF NOT EXISTS aggregators (
 MIGRATIONS = """
 ALTER TABLE positions ADD COLUMN IF NOT EXISTS identification_rule TEXT;
 ALTER TABLE positions ADD COLUMN IF NOT EXISTS quote_currency TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS instrument_name TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS value DECIMAL(24, 8);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS net_value DECIMAL(24, 8);
 """
 
 

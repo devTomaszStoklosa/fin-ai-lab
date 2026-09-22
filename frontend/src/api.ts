@@ -192,6 +192,28 @@ export async function importFile(
   return body as { snapshot: Snapshot; warnings: string[] }
 }
 
+export async function importBossaFile(
+  portfolioId: string,
+  file: File,
+  valuationDate: string,
+): Promise<{ snapshot: Snapshot; warnings: string[] }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('valuation_date', valuationDate)
+
+  const response = await fetch(`/api/portfolios/${portfolioId}/import/bossa`, {
+    method: 'POST',
+    body: formData,
+  })
+  const body = await response.json()
+
+  if (!response.ok) {
+    const detail = body.detail ?? {}
+    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
+  }
+  return body as { snapshot: Snapshot; warnings: string[] }
+}
+
 export async function proposeImportConfig(
   portfolioId: string,
   file: File,
