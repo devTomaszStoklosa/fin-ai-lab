@@ -9,7 +9,11 @@ from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.identification.openfigi import Identification
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
-from fin_ai_lab.portfolio_xray.service import import_bossa_csv, import_file
+from fin_ai_lab.portfolio_xray.service import (
+    _xtb_ticker_and_exchange,
+    import_bossa_csv,
+    import_file,
+)
 from portfolio_xray._fixtures import (
     SYNTH_A_ISIN,
     build_synthetic_bossa_csv,
@@ -34,6 +38,20 @@ class _StubOpenFigiClient:
         return self._identification
 
 PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
+
+
+def test_xtb_ticker_and_exchange_maps_known_suffixes() -> None:
+    assert _xtb_ticker_and_exchange("ISAC.UK") == ("ISAC", "LN")
+    assert _xtb_ticker_and_exchange("ATR.PL") == ("ATR", "PW")
+    # US and NL added for issue #199, verified live against real XTB
+    # positions (MSFT.US, ICHN.NL among them).
+    assert _xtb_ticker_and_exchange("MSFT.US") == ("MSFT", "US")
+    assert _xtb_ticker_and_exchange("ICHN.NL") == ("ICHN", "NA")
+
+
+def test_xtb_ticker_and_exchange_returns_none_for_unmapped_suffix() -> None:
+    assert _xtb_ticker_and_exchange("KAP.ZZ") is None
+    assert _xtb_ticker_and_exchange("NoSuffixSymbol") is None
 
 
 def _prompt_registry() -> PromptRegistry:
