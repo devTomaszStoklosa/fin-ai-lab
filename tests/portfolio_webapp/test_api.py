@@ -31,6 +31,9 @@ class _StubOpenFigiClient:
     ) -> Identification:
         return self._identification
 
+    async def resolve_by_ticker(self, ticker: str, exch_code: str) -> Identification:
+        return self._identification
+
 
 def _build_unrecognized_workbook() -> bytes:
     workbook = openpyxl.Workbook()
@@ -111,10 +114,10 @@ def _client_with_tracked_llm(
     return TestClient(app), created
 
 
-def _client_with_price_fetcher(tmp_path: Path, fetcher) -> TestClient:
+def _client_with_price_fetcher(tmp_path: Path, fetcher, openfigi_client=None) -> TestClient:
     app = create_app(
         db_path=tmp_path / "test.duckdb",
-        openfigi_client_factory=lambda: None,
+        openfigi_client_factory=lambda: openfigi_client,
         price_ratio_fetcher=fetcher,
     )
     return TestClient(app)
@@ -270,6 +273,36 @@ def test_latest_snapshot_positions_use_live_price_ratio(tmp_path: Path) -> None:
         assert by_name["MSCI ACWI"]["return_pct"] == "218.8"
         assert by_name["Atrem"]["market_value"] == "106.60"  # 53.3 * 2
         assert by_name["Atrem"]["return_pct"] == "770.2"
+
+
+def test_live_price_fetcher_receives_yahoo_translated_ticker(tmp_path: Path) -> None:
+    # A resolved OpenFIGI ticker+exchange ("ISAC"/"LN") must reach the price
+    # fetcher translated to Yahoo's own suffix ("ISAC.L"), not the raw
+    # exchange ticker or XTB's own broker symbol ("ISAC.UK") -- issue #192.
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG00265DDD0",
+            ticker="ISAC",
+            exchange_code="LN",
+            identification_rule="ticker and exchange",
+        )
+    )
+    seen_tickers: list[str] = []
+
+    def recording_fetcher(ticker: str, since) -> Decimal | None:
+        seen_tickers.append(ticker)
+        return None
+
+    with _client_with_price_fetcher(tmp_path, recording_fetcher, openfigi_client=stub) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/snapshots")
+
+        assert response.status_code == 200
+        assert "ISAC.L" in seen_tickers
+        assert "ISAC.UK" not in seen_tickers
 
 
 def test_older_snapshot_positions_keep_stored_value(tmp_path: Path) -> None:

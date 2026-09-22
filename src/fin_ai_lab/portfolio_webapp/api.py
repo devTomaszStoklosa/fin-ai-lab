@@ -35,7 +35,7 @@ from fin_ai_lab.portfolio_webapp.schemas import (
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
-from fin_ai_lab.portfolio_xray.metrics.price_history import price_change_ratio
+from fin_ai_lab.portfolio_xray.metrics.price_history import price_change_ratio, to_yahoo_ticker
 from fin_ai_lab.portfolio_xray.metrics.weights import compute_weights
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.correction import (
@@ -783,7 +783,11 @@ async def _live_market_value(
         return None
     if position.market_value is None or position.quantity <= 0:
         return None
-    yfinance_ticker = position.ticker or position.symbol
+    yfinance_ticker = (
+        to_yahoo_ticker(position.ticker, position.exchange_code)
+        if position.ticker is not None
+        else position.symbol
+    )
     if yfinance_ticker is None:
         return None
 

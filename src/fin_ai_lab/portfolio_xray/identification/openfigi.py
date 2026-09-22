@@ -58,6 +58,22 @@ class OpenFigiClient:
 
         return Identification(status="ambiguous")
 
+    async def resolve_by_ticker(self, ticker: str, exch_code: str) -> Identification:
+        # Fallback for positions with no ISIN at all (e.g. XTB's "Open
+        # Positions" export -- 03-design.md's deferred "fallback po
+        # tickerze"). Unlike resolve_by_isin, ticker+exchange alone is
+        # already specific enough (verified live: "ISAC"+"LN" -> exactly one
+        # match) -- no currency filter needed.
+        job = {"idType": "TICKER", "idValue": ticker, "exchCode": exch_code}
+        response = await self._http_client.post("/v3/mapping", json_body=[job])
+        matches = response[0].get("data", [])
+
+        if not matches:
+            return Identification(status="unresolved")
+        if len(matches) == 1:
+            return _to_identification(matches[0], "resolved", "ticker and exchange")
+        return Identification(status="ambiguous")
+
 
 def _to_identification(
     match: dict, status: IdentificationStatus, identification_rule: str

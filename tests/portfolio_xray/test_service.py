@@ -21,11 +21,16 @@ class _StubOpenFigiClient:
     def __init__(self, identification: Identification) -> None:
         self._identification = identification
         self.calls: list[tuple[str, str, str | None]] = []
+        self.ticker_calls: list[tuple[str, str]] = []
 
     async def resolve_by_isin(
         self, isin: str, currency: str, broker_market: str | None = None
     ) -> Identification:
         self.calls.append((isin, currency, broker_market))
+        return self._identification
+
+    async def resolve_by_ticker(self, ticker: str, exch_code: str) -> Identification:
+        self.ticker_calls.append((ticker, exch_code))
         return self._identification
 
 PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
@@ -193,6 +198,40 @@ async def test_import_file_resolves_identification_for_positions_with_isin(tmp_p
     assert result.positions[0].figi == "BBG000BLNNH6"
     assert result.positions[0].ticker == "AAPL"
     assert stub.calls == [("US0378331005", "PLN", None)]
+
+
+async def test_import_file_resolves_xtb_positions_by_ticker_without_isin() -> None:
+    # XTB's "Open Positions" export has no ISIN column at all (issue #192)
+    # -- falls back to ticker+exchange instead of staying unresolved.
+    registry = ParserRegistry()
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG00265DDD0",
+            ticker="ISAC",
+            exchange_code="LN",
+            identification_rule="ticker and exchange",
+        )
+    )
+
+    result = await import_file(
+        build_synthetic_xtb_workbook(),
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        market_currency="PLN",
+        registry=registry,
+        openfigi_client=stub,
+    )
+
+    assert result.errors == []
+    acwi = next(p for p in result.positions if p.symbol == "ISAC.UK")
+    assert acwi.resolution_status == "resolved"
+    assert acwi.figi == "BBG00265DDD0"
+    assert acwi.ticker == "ISAC"
+    atrem = next(p for p in result.positions if p.symbol == "ATR.PL")
+    assert atrem.resolution_status == "resolved"
+    assert sorted(stub.ticker_calls) == [("ATR", "PW"), ("ISAC", "LN")]
+    assert stub.calls == []  # no ISIN on either position -- isin path never used
 
 
 async def test_import_file_unknown_format_rejected_by_owner_is_not_saved(tmp_path: Path) -> None:
