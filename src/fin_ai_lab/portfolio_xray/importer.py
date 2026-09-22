@@ -4,6 +4,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ValidationError
 
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
+from fin_ai_lab.portfolio_xray.parsers.config import CurrencyMarker
 from fin_ai_lab.portfolio_xray.parsers.reader import (
     apply_row_filter,
     find_matching_config,
@@ -44,6 +45,19 @@ def import_xlsx(
         return ImportResult(positions=[], errors=["Unknown file format"], warnings=[])
 
     config, sheet_name, header_row = match
+
+    currency_warnings: list[str] = []
+    effective_currency = market_currency
+    if config.currency_marker is not None:
+        detected = _detect_currency(sheets[sheet_name], config.currency_marker)
+        if detected is not None:
+            effective_currency = detected
+        else:
+            currency_warnings.append(
+                f"Could not detect account currency from '{config.currency_marker.label}' "
+                f"row -- defaulting to {market_currency}"
+            )
+
     rows = rows_as_dicts(sheets[sheet_name], header_row)
     rows = apply_row_filter(rows, config.row_filter)
 
@@ -56,7 +70,7 @@ def import_xlsx(
                 config.column_mapping,
                 broker=config.broker,
                 account_type=account_type,
-                market_currency=market_currency,
+                market_currency=effective_currency,
                 valuation_date=valuation_date,
             )
         except ValidationError as exc:
@@ -68,8 +82,19 @@ def import_xlsx(
     if errors:
         return ImportResult(positions=[], errors=errors, warnings=[])
 
-    merged, warnings = deduplicate_positions(positions)
-    return ImportResult(positions=merged, errors=[], warnings=warnings)
+    merged, dedup_warnings = deduplicate_positions(positions)
+    return ImportResult(positions=merged, errors=[], warnings=currency_warnings + dedup_warnings)
+
+
+def _detect_currency(rows: list[tuple[object, ...]], marker: CurrencyMarker) -> str | None:
+    for row in rows:
+        for index, cell in enumerate(row):
+            if cell != marker.label:
+                continue
+            currency_index = index + marker.currency_column_offset
+            if 0 <= currency_index < len(row) and row[currency_index] is not None:
+                return str(row[currency_index])
+    return None
 
 
 def build_position(
