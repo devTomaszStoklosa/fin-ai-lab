@@ -37,11 +37,17 @@ class OpenFigiClient:
         )
 
     async def resolve_by_isin(
-        self, isin: str, currency: str, broker_market: str | None = None
+        self, isin: str, currency: str | None = None, broker_market: str | None = None
     ) -> Identification:
-        # OpenFIGI filters listings by currency server-side; we only decide
-        # between what's left, per the "Wybór notowania" rule in 02-spec.md.
-        job = {"idType": "ID_ISIN", "idValue": isin, "currency": currency}
+        # OpenFIGI filters listings by currency server-side when given one;
+        # we only decide between what's left, per the "Wybór notowania" rule
+        # in 02-spec.md. currency=None is a caller-driven retry (issue #207:
+        # the broker's recorded currency doesn't always match what the
+        # instrument itself trades in) -- this method makes a single
+        # attempt either way, the retry decision belongs to the caller.
+        job: dict[str, str] = {"idType": "ID_ISIN", "idValue": isin}
+        if currency is not None:
+            job["currency"] = currency
         response = await self._http_client.post("/v3/mapping", json_body=[job])
         matches = response[0].get("data", [])
 
@@ -49,12 +55,22 @@ class OpenFigiClient:
             return Identification(status="unresolved")
 
         if len(matches) == 1:
-            return _to_identification(matches[0], "resolved", "only listing in currency")
+            rule = (
+                "only listing in currency"
+                if currency is not None
+                else "only listing (no currency match)"
+            )
+            return _to_identification(matches[0], "resolved", rule)
 
         if broker_market is not None:
-            broker_matches = [match for match in matches if match.get("exchCode") == broker_market]
+            broker_matches = [
+                match for match in matches if match.get("exchCode") == broker_market
+            ]
             if len(broker_matches) == 1:
-                return _to_identification(broker_matches[0], "resolved", "broker market")
+                rule = (
+                    "broker market" if currency is not None else "broker market (no currency match)"
+                )
+                return _to_identification(broker_matches[0], "resolved", rule)
 
         return Identification(status="ambiguous")
 

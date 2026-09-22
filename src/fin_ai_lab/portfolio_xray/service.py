@@ -174,6 +174,21 @@ def _xtb_ticker_and_exchange(symbol: str) -> tuple[str, str] | None:
     return (base, exch_code) if exch_code is not None else None
 
 
+# Bossa's ledger settles every transaction in PLN after auto-converting, even
+# for instruments that don't trade in PLN at all (issue #207) -- the ISIN's
+# own country prefix is the only per-instrument signal the CSV gives us for
+# where it actually trades. Only prefixes actually observed on a real,
+# currently-open Bossa position are mapped, same "observed data only" rule as
+# _XTB_SUFFIX_TO_OPENFIGI_EXCHANGE above. Overrides the caller's own
+# broker_market (e.g. Bossa's "PW") only for these prefixes; every other ISIN
+# keeps using whatever the caller passed in.
+_ISIN_COUNTRY_TO_OPENFIGI_EXCHANGE = {"US": "US"}
+
+
+def _effective_broker_market(isin: str, broker_market: str | None) -> str | None:
+    return _ISIN_COUNTRY_TO_OPENFIGI_EXCHANGE.get(isin[:2], broker_market)
+
+
 async def _resolve_identifications(
     positions: list[Position],
     openfigi_client: OpenFigiClient | None,
@@ -190,6 +205,17 @@ async def _resolve_identifications(
             identification = await openfigi_client.resolve_by_isin(
                 position.isin, currency, broker_market
             )
+            if identification.status == "unresolved":
+                # The recorded currency may not be what the instrument
+                # itself trades in (issue #207) -- retry without it, using
+                # whatever market the ISIN's own country implies when the
+                # caller's own broker_market doesn't apply. Only fires when
+                # the first, currency-filtered attempt already found
+                # nothing, so an already-working resolution never changes.
+                effective_market = _effective_broker_market(position.isin, broker_market)
+                identification = await openfigi_client.resolve_by_isin(
+                    position.isin, None, effective_market
+                )
         elif position.broker == "xtb" and position.symbol is not None:
             split = _xtb_ticker_and_exchange(position.symbol)
             if split is None:
