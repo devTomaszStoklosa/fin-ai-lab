@@ -132,11 +132,14 @@ async def import_bossa_csv(
 
 # XTB's "Open Positions" export has no ISIN column at all -- its own ticker
 # suffix ("ISAC.UK") isn't a standard exchange code either, so it needs
-# translating before an OpenFIGI ticker lookup. Only the two markets
-# actually observed in real XTB data are mapped, same "observed data only"
-# rule as importer.py's CATEGORY_TO_ASSET_CLASS -- deliberately deferred
-# fallback from 03-design.md, picked up for issue #192.
-_XTB_SUFFIX_TO_OPENFIGI_EXCHANGE = {"UK": "LN", "PL": "PW"}
+# translating before an OpenFIGI ticker lookup. Only markets actually
+# observed in real XTB data are mapped, same "observed data only" rule as
+# importer.py's CATEGORY_TO_ASSET_CLASS -- deliberately deferred fallback
+# from 03-design.md, picked up for issue #192 (UK/PL) and #199 (US/NL).
+# "US" is OpenFIGI's composite US code, not NYSE/NASDAQ-specific -- XTB's
+# own ".US" suffix doesn't distinguish those either, so this is the right
+# granularity, verified live to resolve real tickers correctly.
+_XTB_SUFFIX_TO_OPENFIGI_EXCHANGE = {"UK": "LN", "PL": "PW", "US": "US", "NL": "NA"}
 
 
 def _xtb_ticker_and_exchange(symbol: str) -> tuple[str, str] | None:
