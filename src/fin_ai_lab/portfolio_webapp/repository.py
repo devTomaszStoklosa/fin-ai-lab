@@ -30,6 +30,7 @@ PositionRow = tuple[
     str | None,  # ticker
     str | None,  # exchange_code
     str | None,  # identification_rule
+    str | None,  # quote_currency
 ]
 ReportRow = tuple[uuid.UUID, uuid.UUID, datetime, str, Decimal, str]
 
@@ -106,7 +107,7 @@ def insert_positions(
     for position in positions:
         connection.execute(
             "INSERT INTO positions VALUES "
-            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 uuid.uuid4(),
                 snapshot_id,
@@ -127,6 +128,7 @@ def insert_positions(
                 position.ticker,
                 position.exchange_code,
                 position.identification_rule,
+                position.quote_currency,
             ],
         )
 
@@ -137,7 +139,7 @@ def insert_position(
     position_id = uuid.uuid4()
     connection.execute(
         "INSERT INTO positions VALUES "
-        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             position_id,
             snapshot_id,
@@ -158,6 +160,7 @@ def insert_position(
             position.ticker,
             position.exchange_code,
             position.identification_rule,
+            position.quote_currency,
         ],
     )
     row = get_position(connection, position_id)
@@ -171,7 +174,8 @@ def get_position(
     rows = connection.execute(
         "SELECT id, snapshot_id, broker, account_type, instrument_name, isin, symbol, "
         "asset_class, quantity, avg_cost, cost_currency, market_value, market_currency, "
-        "valuation_date, resolution_status, figi, ticker, exchange_code, identification_rule "
+        "valuation_date, resolution_status, figi, ticker, exchange_code, identification_rule, "
+        "quote_currency "
         "FROM positions WHERE id = ?",
         [position_id],
     ).fetchall()
@@ -184,7 +188,8 @@ def update_position(
     connection.execute(
         "UPDATE positions SET instrument_name = ?, isin = ?, symbol = ?, asset_class = ?, "
         "quantity = ?, avg_cost = ?, cost_currency = ?, market_value = ?, market_currency = ?, "
-        "resolution_status = ?, figi = ?, ticker = ?, exchange_code = ?, identification_rule = ? "
+        "resolution_status = ?, figi = ?, ticker = ?, exchange_code = ?, identification_rule = ?, "
+        "quote_currency = ? "
         "WHERE id = ?",
         [
             position.instrument_name,
@@ -201,6 +206,7 @@ def update_position(
             position.ticker,
             position.exchange_code,
             position.identification_rule,
+            position.quote_currency,
             position_id,
         ],
     )
@@ -260,7 +266,8 @@ def list_positions(
     return connection.execute(
         "SELECT id, snapshot_id, broker, account_type, instrument_name, isin, symbol, "
         "asset_class, quantity, avg_cost, cost_currency, market_value, market_currency, "
-        "valuation_date, resolution_status, figi, ticker, exchange_code, identification_rule "
+        "valuation_date, resolution_status, figi, ticker, exchange_code, identification_rule, "
+        "quote_currency "
         "FROM positions WHERE snapshot_id = ?",
         [snapshot_id],
     ).fetchall()

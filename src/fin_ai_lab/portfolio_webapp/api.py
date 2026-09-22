@@ -35,7 +35,11 @@ from fin_ai_lab.portfolio_webapp.schemas import (
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
-from fin_ai_lab.portfolio_xray.metrics.price_history import price_change_ratio, to_yahoo_ticker
+from fin_ai_lab.portfolio_xray.metrics.price_history import (
+    fetch_quote_currency,
+    price_change_ratio,
+    to_yahoo_ticker,
+)
 from fin_ai_lab.portfolio_xray.metrics.weights import compute_weights
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.correction import (
@@ -96,6 +100,9 @@ def create_app(
     # a plain function (P1 has no class here). Tests substitute a fake
     # returning canned ratios instead of calling yfinance.
     price_ratio_fetcher: Callable[[str, date_type], Decimal | None] = price_change_ratio,
+    # Same reasoning as price_ratio_fetcher -- a plain function, tests
+    # substitute a fake instead of calling yfinance.
+    quote_currency_fetcher: Callable[[str], str | None] = fetch_quote_currency,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -165,6 +172,7 @@ def create_app(
             account_type=_resolve_account_type(portfolio),
             registry=parser_registry_factory(),
             openfigi_client=openfigi_client_factory(),
+            quote_currency_fetcher=quote_currency_fetcher,
         )
 
     @app.post(
@@ -256,6 +264,7 @@ def create_app(
             account_type=_resolve_account_type(portfolio),
             registry=registry,
             openfigi_client=openfigi_client_factory(),
+            quote_currency_fetcher=quote_currency_fetcher,
         )
 
     @app.get("/api/portfolios/{portfolio_id}/snapshots", response_model=list[SnapshotOut])
@@ -316,6 +325,7 @@ def create_app(
             account_type=_resolve_account_type(portfolio),
             market_value=payload.quantity * payload.avg_cost,
             openfigi_client=openfigi_client_factory(),
+            quote_currency_fetcher=quote_currency_fetcher,
         )
         snapshot = repository.get_or_create_manual_snapshot(connection, portfolio_id)
         row = repository.insert_position(connection, snapshot_id=snapshot[0], position=position)
@@ -335,6 +345,7 @@ def create_app(
             account_type=_resolve_account_type(portfolio),
             market_value=payload.market_value,
             openfigi_client=openfigi_client_factory(),
+            quote_currency_fetcher=quote_currency_fetcher,
         )
         row = repository.update_position(connection, position_id=position_id, position=position)
         return _to_position_out(row)
@@ -588,6 +599,7 @@ async def _build_manual_position(
     account_type: str,
     market_value: Decimal,
     openfigi_client: OpenFigiClient | None,
+    quote_currency_fetcher: Callable[[str], str | None],
 ) -> Position:
     position = Position(
         broker=repository.MANUAL_BROKER,
@@ -603,11 +615,13 @@ async def _build_manual_position(
         market_currency="PLN",
         valuation_date=date_type.today(),
     )
-    return await _resolve_manual_identification(position, openfigi_client)
+    return await _resolve_manual_identification(position, openfigi_client, quote_currency_fetcher)
 
 
 async def _resolve_manual_identification(
-    position: Position, openfigi_client: OpenFigiClient | None
+    position: Position,
+    openfigi_client: OpenFigiClient | None,
+    quote_currency_fetcher: Callable[[str], str | None],
 ) -> Position:
     # Mirrors service.py's own (module-private) _resolve_identifications for
     # a single position -- same reasoning as _flag_injection_warnings: that
@@ -616,6 +630,15 @@ async def _resolve_manual_identification(
     if openfigi_client is None or position.isin is None:
         return position
     identification = await openfigi_client.resolve_by_isin(position.isin, "PLN", None)
+    quote_currency = None
+    if identification.ticker is not None:
+        yfinance_ticker = to_yahoo_ticker(identification.ticker, identification.exchange_code)
+        try:
+            quote_currency = await asyncio.to_thread(quote_currency_fetcher, yfinance_ticker)
+        except Exception:
+            # yfinance is unofficial and sometimes blocked (docs/DATA-SOURCES.md)
+            # -- a failed lookup must not break saving the position.
+            quote_currency = None
     return position.model_copy(
         update={
             "resolution_status": identification.status,
@@ -623,6 +646,7 @@ async def _resolve_manual_identification(
             "ticker": identification.ticker,
             "exchange_code": identification.exchange_code,
             "identification_rule": identification.identification_rule,
+            "quote_currency": quote_currency,
         }
     )
 
@@ -637,6 +661,7 @@ async def _import_and_persist(
     account_type: str,
     registry: ParserRegistry,
     openfigi_client: OpenFigiClient | None,
+    quote_currency_fetcher: Callable[[str], str | None],
 ) -> ImportResponse:
     """Shared by /import and /import/approve -- once a registry that already
     recognizes the file's format is in hand (built-in for /import, just
@@ -650,6 +675,7 @@ async def _import_and_persist(
             market_currency="PLN",
             registry=registry,
             openfigi_client=openfigi_client,
+            quote_currency_fetcher=quote_currency_fetcher,
         )
     except (zipfile.BadZipFile, InvalidFileException) as exc:
         # A CLI user already picked a file they know is an XTB export; a
@@ -734,6 +760,7 @@ def _to_position_out(row: PositionRow, *, live_market_value: Decimal | None = No
         ticker,
         exchange_code,
         identification_rule,
+        quote_currency,
     ) = row
     effective_market_value = market_value if live_market_value is None else live_market_value
     return PositionOut(
@@ -755,6 +782,7 @@ def _to_position_out(row: PositionRow, *, live_market_value: Decimal | None = No
         ticker=ticker,
         exchange_code=exchange_code,
         identification_rule=identification_rule,
+        quote_currency=quote_currency,
         return_pct=_return_pct(
             quantity=quantity,
             avg_cost=avg_cost,
@@ -850,6 +878,7 @@ def _position_row_to_domain(row: PositionRow) -> Position:
         ticker,
         exchange_code,
         identification_rule,
+        quote_currency,
     ) = row
     return Position(
         broker=broker,
@@ -869,6 +898,7 @@ def _position_row_to_domain(row: PositionRow) -> Position:
         ticker=ticker,
         exchange_code=exchange_code,
         identification_rule=identification_rule,
+        quote_currency=quote_currency,
     )
 
 

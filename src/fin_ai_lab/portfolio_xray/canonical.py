@@ -45,6 +45,11 @@ class Position(BaseModel):
     cost_currency: str | None = None
     market_value: Decimal | None = None
     market_currency: str | None = None
+    # The instrument's own trading currency (e.g. a USD-quoted ETF held in a
+    # PLN account) -- purely informational, never fed into FX conversion.
+    # Distinct from market_currency, which is what the broker recorded the
+    # amount in (see issue #195 for why those two are not the same thing).
+    quote_currency: str | None = None
     valuation_date: date
     resolution_status: ResolutionStatus = "unresolved"
     figi: str | None = None

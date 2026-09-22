@@ -31,6 +31,7 @@ export type Position = {
   ticker: string | null
   exchange_code: string | null
   identification_rule: string | null
+  quote_currency: string | null
   return_pct: string | null
 }
 

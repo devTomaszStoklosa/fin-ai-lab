@@ -234,6 +234,36 @@ async def test_import_file_resolves_xtb_positions_by_ticker_without_isin() -> No
     assert stub.calls == []  # no ISIN on either position -- isin path never used
 
 
+async def test_import_file_populates_quote_currency_for_resolved_position() -> None:
+    # ISAC.UK trades in USD even though this account is PLN (issue #197) --
+    # quote_currency_fetcher, when given, must reach the position.
+    registry = ParserRegistry()
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG00265DDD0",
+            ticker="ISAC",
+            exchange_code="LN",
+            identification_rule="ticker and exchange",
+        )
+    )
+
+    result = await import_file(
+        build_synthetic_xtb_workbook(),
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        market_currency="PLN",
+        registry=registry,
+        openfigi_client=stub,
+        quote_currency_fetcher=lambda ticker: "USD" if ticker == "ISAC.L" else None,
+    )
+
+    assert result.errors == []
+    acwi = next(p for p in result.positions if p.symbol == "ISAC.UK")
+    assert acwi.quote_currency == "USD"
+    assert acwi.market_currency == "PLN"  # unaffected -- different field, #195
+
+
 async def test_import_file_unknown_format_rejected_by_owner_is_not_saved(tmp_path: Path) -> None:
     registry = ParserRegistry(parsers_dir=tmp_path)
     llm_client = FakeLlmClient({"propose_config": _proposal_json()})
@@ -282,6 +312,33 @@ async def test_import_bossa_csv_aggregates_and_resolves_identification() -> None
     assert position.resolution_status == "resolved"
     assert position.ticker == "SYNA.WA"
     assert stub.calls == [(SYNTH_A_ISIN, "PLN", "WSE")]
+
+
+async def test_import_bossa_csv_populates_quote_currency() -> None:
+    # Same _resolve_identifications enrichment as import_file -- Bossa gets
+    # quote_currency through the identical mechanism, no broker-specific
+    # code path (issue #197).
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG-SYNTH",
+            ticker="SYNA.WA",
+            exchange_code="WSE",
+            identification_rule="only listing in currency",
+        )
+    )
+
+    result = await import_bossa_csv(
+        build_synthetic_bossa_csv(),
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        openfigi_client=stub,
+        broker_market="WSE",
+        quote_currency_fetcher=lambda ticker: "PLN",
+    )
+
+    assert result.errors == []
+    assert result.positions[0].quote_currency == "PLN"
 
 
 async def test_import_bossa_csv_reports_parse_errors() -> None:

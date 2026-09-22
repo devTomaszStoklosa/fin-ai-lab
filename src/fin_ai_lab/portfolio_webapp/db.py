@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS positions (
     figi TEXT,
     ticker TEXT,
     exchange_code TEXT,
-    identification_rule TEXT
+    identification_rule TEXT,
+    quote_currency TEXT
 );
 
 -- Bossa (S8) only; dedup_hash is the full-row hash from ledger.py::dedup_key.
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS aggregators (
 # ran an earlier slice) needs its own idempotent statement here.
 MIGRATIONS = """
 ALTER TABLE positions ADD COLUMN IF NOT EXISTS identification_rule TEXT;
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS quote_currency TEXT;
 """
 
 

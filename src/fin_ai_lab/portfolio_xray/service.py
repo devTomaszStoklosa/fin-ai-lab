@@ -1,16 +1,18 @@
+import asyncio
 from collections.abc import Callable
 from datetime import date
 
 from fin_ai_lab.core.llm.client import LlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
-from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
+from fin_ai_lab.portfolio_xray.identification.openfigi import Identification, OpenFigiClient
 from fin_ai_lab.portfolio_xray.importer import ImportResult, deduplicate_positions, import_xlsx
 from fin_ai_lab.portfolio_xray.ledger import (
     attach_current_market_values,
     parse_bossa_csv,
     transactions_to_positions,
 )
+from fin_ai_lab.portfolio_xray.metrics.price_history import to_yahoo_ticker
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.correction import (
     CorrectionLoopError,
@@ -41,6 +43,7 @@ async def import_file(
     on_new_config_proposed: ApprovalCallback | None = None,
     openfigi_client: OpenFigiClient | None = None,
     broker_market: str | None = None,
+    quote_currency_fetcher: Callable[[str], str | None] | None = None,
 ) -> ImportResult:
     sheets = read_xlsx_sheets(file_bytes)
     injection_flags = _flag_all_sheets(sheets)
@@ -54,7 +57,9 @@ async def import_file(
             market_currency=market_currency,
             registry=registry,
         )
-        positions = await _resolve_identifications(result.positions, openfigi_client, broker_market)
+        positions = await _resolve_identifications(
+            result.positions, openfigi_client, broker_market, quote_currency_fetcher
+        )
         return result.model_copy(
             update={"positions": positions, "warnings": result.warnings + injection_flags}
         )
@@ -87,7 +92,9 @@ async def import_file(
 
     registry.save(config)
     merged, dedup_warnings = deduplicate_positions(positions)
-    merged = await _resolve_identifications(merged, openfigi_client, broker_market)
+    merged = await _resolve_identifications(
+        merged, openfigi_client, broker_market, quote_currency_fetcher
+    )
     return ImportResult(positions=merged, errors=[], warnings=dedup_warnings + injection_flags)
 
 
@@ -98,6 +105,7 @@ async def import_bossa_csv(
     account_type: AccountType,
     openfigi_client: OpenFigiClient | None = None,
     broker_market: str | None = None,
+    quote_currency_fetcher: Callable[[str], str | None] | None = None,
 ) -> ImportResult:
     """Bossa's own path, parallel to import_file: its export is a
     transaction ledger, not a position snapshot (no registry, no LLM
@@ -115,7 +123,9 @@ async def import_bossa_csv(
     if errors:
         return ImportResult(positions=[], errors=errors, warnings=[])
 
-    positions = await _resolve_identifications(positions, openfigi_client, broker_market)
+    positions = await _resolve_identifications(
+        positions, openfigi_client, broker_market, quote_currency_fetcher
+    )
     positions = attach_current_market_values(positions)
     return ImportResult(positions=positions, errors=[], warnings=[])
 
@@ -141,6 +151,7 @@ async def _resolve_identifications(
     positions: list[Position],
     openfigi_client: OpenFigiClient | None,
     broker_market: str | None,
+    quote_currency_fetcher: Callable[[str], str | None] | None = None,
 ) -> list[Position]:
     if openfigi_client is None:
         return positions
@@ -162,6 +173,7 @@ async def _resolve_identifications(
             resolved.append(position)
             continue
 
+        quote_currency = await _fetch_quote_currency(identification, quote_currency_fetcher)
         resolved.append(
             position.model_copy(
                 update={
@@ -170,10 +182,27 @@ async def _resolve_identifications(
                     "ticker": identification.ticker,
                     "exchange_code": identification.exchange_code,
                     "identification_rule": identification.identification_rule,
+                    "quote_currency": quote_currency,
                 }
             )
         )
     return resolved
+
+
+async def _fetch_quote_currency(
+    identification: Identification,
+    quote_currency_fetcher: Callable[[str], str | None] | None,
+) -> str | None:
+    if quote_currency_fetcher is None or identification.ticker is None:
+        return None
+    yfinance_ticker = to_yahoo_ticker(identification.ticker, identification.exchange_code)
+    try:
+        return await asyncio.to_thread(quote_currency_fetcher, yfinance_ticker)
+    except Exception:
+        # yfinance is unofficial and sometimes blocked (docs/DATA-SOURCES.md)
+        # -- a failed lookup must not break the import, quote_currency is
+        # purely informational.
+        return None
 
 
 def _flag_all_sheets(sheets: dict[str, list[tuple[object, ...]]]) -> list[str]:

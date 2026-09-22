@@ -10,19 +10,24 @@ pd = pytest.importorskip("pandas")
 
 from fin_ai_lab.portfolio_xray.metrics.price_history import (  # noqa: E402
     fetch_price_history,
+    fetch_quote_currency,
     price_change_ratio,
     to_yahoo_ticker,
 )
 
 
 def _install_fake_yfinance(
-    monkeypatch: pytest.MonkeyPatch, history_df, call_count: dict | None = None
+    monkeypatch: pytest.MonkeyPatch,
+    history_df,
+    call_count: dict | None = None,
+    fast_info: dict | None = None,
 ) -> None:
     fake_module = types.ModuleType("yfinance")
 
     class FakeTicker:
         def __init__(self, ticker: str) -> None:
             self._ticker = ticker
+            self.fast_info = fast_info or {}
 
         def history(self, period: str):
             if call_count is not None:
@@ -168,3 +173,44 @@ def test_to_yahoo_ticker_appends_mapped_suffix() -> None:
 def test_to_yahoo_ticker_returns_bare_ticker_for_unmapped_exchange() -> None:
     assert to_yahoo_ticker("AAPL", "US") == "AAPL"
     assert to_yahoo_ticker("AAPL", None) == "AAPL"
+
+
+def test_fetch_quote_currency_returns_currency_and_caches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _install_fake_yfinance(monkeypatch, pd.DataFrame({"Close": []}), fast_info={"currency": "USD"})
+
+    currency = fetch_quote_currency("ISAC.L", cache_dir=tmp_path)
+
+    assert currency == "USD"
+    assert len(list(tmp_path.glob("*.json"))) == 1
+
+
+def test_fetch_quote_currency_uses_cache_on_second_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    construct_count = {"n": 0}
+    fake_module = types.ModuleType("yfinance")
+
+    class FakeTicker:
+        def __init__(self, ticker: str) -> None:
+            construct_count["n"] += 1
+            self.fast_info = {"currency": "PLN"}
+
+    fake_module.Ticker = FakeTicker
+    monkeypatch.setitem(sys.modules, "yfinance", fake_module)
+
+    fetch_quote_currency("ATR.WA", cache_dir=tmp_path)
+    fetch_quote_currency("ATR.WA", cache_dir=tmp_path)
+
+    assert construct_count["n"] == 1
+
+
+def test_fetch_quote_currency_returns_none_when_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _install_fake_yfinance(monkeypatch, pd.DataFrame({"Close": []}), fast_info={})
+
+    currency = fetch_quote_currency("UNKNOWN", cache_dir=tmp_path)
+
+    assert currency is None

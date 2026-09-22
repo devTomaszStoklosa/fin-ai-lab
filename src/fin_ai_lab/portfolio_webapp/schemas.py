@@ -41,6 +41,7 @@ class PositionOut(BaseModel):
     ticker: str | None
     exchange_code: str | None
     identification_rule: str | None
+    quote_currency: str | None
     return_pct: Decimal | None
 
 
