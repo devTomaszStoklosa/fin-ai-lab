@@ -10,6 +10,7 @@ from uuid import UUID
 
 import duckdb
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from google.genai import errors as genai_errors
 from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import ValidationError
 
@@ -568,20 +569,23 @@ def create_app(
 
             instrument_metadata: dict[str, InstrumentMetadata] = {}
             category_weight: dict[str, Decimal] = {}
-            for index, weighted in enumerate(weights.weighted_positions):
-                key = str(index)
-                category = await classify_sector(
-                    weighted.position, llm_client, prompt_registry, MODEL
-                )
-                category_weight[category] = (
-                    category_weight.get(category, Decimal(0)) + weighted.weight
-                )
-                instrument_metadata[key] = InstrumentMetadata(
-                    name=weighted.position.instrument_name,
-                    category=category,
-                    exchange_code=weighted.position.exchange_code,
-                    currency=weighted.position.market_currency,
-                )
+            try:
+                for index, weighted in enumerate(weights.weighted_positions):
+                    key = str(index)
+                    category = await classify_sector(
+                        weighted.position, llm_client, prompt_registry, MODEL
+                    )
+                    category_weight[category] = (
+                        category_weight.get(category, Decimal(0)) + weighted.weight
+                    )
+                    instrument_metadata[key] = InstrumentMetadata(
+                        name=weighted.position.instrument_name,
+                        category=category,
+                        exchange_code=weighted.position.exchange_code,
+                        currency=weighted.position.market_currency,
+                    )
+            except genai_errors.APIError as exc:
+                raise _llm_unavailable(exc) from exc
 
             metrics = MetricsJson(
                 valuation_date=valuation_date,
@@ -597,6 +601,8 @@ def create_app(
                 )
             except ReportRejectedError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
+            except genai_errors.APIError as exc:
+                raise _llm_unavailable(exc) from exc
 
             cost_usd = llm_client.total_cost_usd - cost_before
             row = repository.create_report(
@@ -1065,6 +1071,17 @@ def _require_own_aggregator(
 
 def _as_percent(fraction: Decimal) -> Decimal:
     return (fraction * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+
+
+def _llm_unavailable(exc: genai_errors.APIError) -> HTTPException:
+    # Covers both ServerError (5xx, e.g. "model overloaded") and ClientError
+    # (4xx, e.g. Gemini's own rate limit) -- either way the report can't be
+    # generated right now, and the raw exception must not reach the owner as
+    # an opaque 500 (issue #204).
+    return HTTPException(
+        status_code=503,
+        detail=f"Model AI chwilowo niedostępny ({exc.message}) -- spróbuj ponownie za chwilę.",
+    )
 
 
 def _to_position_preview(position: Position) -> PositionPreviewOut:

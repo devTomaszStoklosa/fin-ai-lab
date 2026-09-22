@@ -12,6 +12,7 @@ pytest.importorskip("duckdb")
 pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient  # noqa: E402
+from google.genai import errors as genai_errors  # noqa: E402
 from portfolio_xray._fixtures import build_synthetic_xtb_workbook  # noqa: E402
 
 from fin_ai_lab.core.llm.fake import FakeLlmClient  # noqa: E402
@@ -779,6 +780,63 @@ _REPORT_LLM_RESPONSES = {
     # digits trivially passes it.
     "narrative": "Portfel składa się głównie z funduszy ETF, z niewielkim udziałem akcji.",
 }
+
+
+class _FailingLlmClient:
+    """Delegates to a real FakeLlmClient except for one prompt_id, where it
+    raises the same exception type Gemini's SDK raises on a transient
+    failure -- issue #204."""
+
+    def __init__(self, fail_prompt_id: str, responses: dict[str, str]) -> None:
+        self._fail_prompt_id = fail_prompt_id
+        self._inner = FakeLlmClient(responses)
+
+    @property
+    def total_cost_usd(self) -> Decimal:
+        return self._inner.total_cost_usd
+
+    async def complete(self, request):
+        if request.prompt_id == self._fail_prompt_id:
+            raise genai_errors.ServerError(
+                503, {"error": {"message": "High demand", "status": "UNAVAILABLE"}}
+            )
+        return await self._inner.complete(request)
+
+
+def test_generate_report_returns_503_when_classify_sector_llm_call_fails(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: None,
+        llm_client_factory=lambda: _FailingLlmClient("classify_sector", _REPORT_LLM_RESPONSES),
+        price_ratio_fetcher=lambda ticker, since: None,
+    )
+    with TestClient(app) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.post(f"/api/portfolios/{portfolio_id}/report")
+
+        assert response.status_code == 503
+        assert "chwilowo niedostępny" in response.json()["detail"]
+
+
+def test_generate_report_returns_503_when_narrative_llm_call_fails(tmp_path: Path) -> None:
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: None,
+        llm_client_factory=lambda: _FailingLlmClient("narrative", _REPORT_LLM_RESPONSES),
+        price_ratio_fetcher=lambda ticker, since: None,
+    )
+    with TestClient(app) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.post(f"/api/portfolios/{portfolio_id}/report")
+
+        assert response.status_code == 503
+        assert "chwilowo niedostępny" in response.json()["detail"]
 
 
 def test_get_report_returns_none_before_any_generation(client: TestClient) -> None:
