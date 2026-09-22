@@ -1,5 +1,6 @@
 import json
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
@@ -8,9 +9,10 @@ import openpyxl
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.identification.openfigi import Identification
-from fin_ai_lab.portfolio_xray.ledger import parse_bossa_csv
+from fin_ai_lab.portfolio_xray.ledger import BossaTransaction, parse_bossa_csv
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
 from fin_ai_lab.portfolio_xray.service import (
+    _effective_broker_market,
     _xtb_ticker_and_exchange,
     build_bossa_import_result,
     import_bossa_csv,
@@ -26,11 +28,11 @@ from portfolio_xray._fixtures import (
 class _StubOpenFigiClient:
     def __init__(self, identification: Identification) -> None:
         self._identification = identification
-        self.calls: list[tuple[str, str, str | None]] = []
+        self.calls: list[tuple[str, str | None, str | None]] = []
         self.ticker_calls: list[tuple[str, str]] = []
 
     async def resolve_by_isin(
-        self, isin: str, currency: str, broker_market: str | None = None
+        self, isin: str, currency: str | None = None, broker_market: str | None = None
     ) -> Identification:
         self.calls.append((isin, currency, broker_market))
         return self._identification
@@ -38,6 +40,25 @@ class _StubOpenFigiClient:
     async def resolve_by_ticker(self, ticker: str, exch_code: str) -> Identification:
         self.ticker_calls.append((ticker, exch_code))
         return self._identification
+
+
+class _RetryStubOpenFigiClient:
+    """Unresolved on the currency-filtered attempt, resolved on the retry --
+    for exercising _resolve_identifications' own retry-and-override
+    decision (issue #207), which a client returning one fixed Identification
+    regardless of args can't exercise."""
+
+    def __init__(self, retry_identification: Identification) -> None:
+        self._retry_identification = retry_identification
+        self.calls: list[tuple[str, str | None, str | None]] = []
+
+    async def resolve_by_isin(
+        self, isin: str, currency: str | None = None, broker_market: str | None = None
+    ) -> Identification:
+        self.calls.append((isin, currency, broker_market))
+        if currency is not None:
+            return Identification(status="unresolved")
+        return self._retry_identification
 
 PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
 
@@ -54,6 +75,17 @@ def test_xtb_ticker_and_exchange_maps_known_suffixes() -> None:
 def test_xtb_ticker_and_exchange_returns_none_for_unmapped_suffix() -> None:
     assert _xtb_ticker_and_exchange("KAP.ZZ") is None
     assert _xtb_ticker_and_exchange("NoSuffixSymbol") is None
+
+
+def test_effective_broker_market_overrides_for_observed_isin_country() -> None:
+    # SolarEdge (issue #207): Bossa's own broker_market ("PW") is wrong for
+    # a US-domiciled ISIN it happens to have recorded in PLN.
+    assert _effective_broker_market("US83417M1045", "PW") == "US"
+
+
+def test_effective_broker_market_falls_back_for_unmapped_country() -> None:
+    assert _effective_broker_market("PLATAL000046", "PW") == "PW"
+    assert _effective_broker_market("SE0027598038", None) is None
 
 
 def _prompt_registry() -> PromptRegistry:
@@ -374,6 +406,50 @@ async def test_build_bossa_import_result_replays_a_transaction_list_directly() -
     assert result.errors == []
     assert len(result.positions) == 1
     assert result.positions[0].isin == SYNTH_A_ISIN
+
+
+async def test_build_bossa_import_result_uses_isin_country_market_for_foreign_isin() -> None:
+    # SolarEdge (issue #207): bought for PLN, broker auto-converted since it
+    # actually trades in USD -- Bossa's own broker_market ("PW") would never
+    # match a US-domiciled ISIN, so the effective market passed to OpenFIGI
+    # must come from the ISIN's own country, not the fixed Bossa value.
+    stub = _RetryStubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG-SEDG",
+            ticker="SEDG",
+            exchange_code="US",
+            identification_rule="broker market (no currency match)",
+        )
+    )
+    transactions = [
+        BossaTransaction(
+            executed_at=datetime(2026, 1, 1, 10, 0, 0),
+            instrument_name="SolarEdge Technologies, Inc.",
+            isin="US83417M1045",
+            side="buy",
+            quantity=Decimal("6"),
+            price=Decimal("327.43"),
+            value=Decimal("1964.57"),
+            commission=Decimal("5.68"),
+            net_value=Decimal("1964.57"),
+            currency="PLN",
+        )
+    ]
+
+    result = await build_bossa_import_result(
+        transactions,
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        openfigi_client=stub,
+        broker_market="PW",
+    )
+
+    assert result.positions[0].resolution_status == "resolved"
+    assert stub.calls == [
+        ("US83417M1045", "PLN", "PW"),  # first attempt: Bossa's own market, wrong for this ISIN
+        ("US83417M1045", None, "US"),  # retry: no currency, ISIN-country-derived market
+    ]
 
 
 async def test_import_bossa_csv_reports_parse_errors() -> None:

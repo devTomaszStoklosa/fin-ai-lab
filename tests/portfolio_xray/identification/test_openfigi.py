@@ -83,6 +83,50 @@ async def test_resolve_by_isin_ambiguous_when_broker_market_matches_none(tmp_pat
     assert identification.status == "ambiguous"
 
 
+async def test_resolve_by_isin_without_currency_returns_resolved_for_single_match(
+    tmp_path: Path,
+) -> None:
+    # currency=None is the caller's own retry after a currency-filtered
+    # attempt found nothing (issue #207) -- this client makes one attempt
+    # per call either way, the retry decision belongs to the caller.
+    match = {"figi": "BBG1", "ticker": "SEDG", "exchCode": "US"}
+    client = _client_with_response([{"data": [match]}], tmp_path)
+
+    identification = await client.resolve_by_isin("US83417M1045")
+
+    assert identification.status == "resolved"
+    assert identification.figi == "BBG1"
+    assert identification.identification_rule == "only listing (no currency match)"
+
+
+async def test_resolve_by_isin_without_currency_picks_broker_market_when_ambiguous(
+    tmp_path: Path,
+) -> None:
+    client = _client_with_response(
+        [{"data": [{"figi": "BBG1", "exchCode": "US"}, {"figi": "BBG2", "exchCode": "GR"}]}],
+        tmp_path,
+    )
+
+    identification = await client.resolve_by_isin("US83417M1045", broker_market="US")
+
+    assert identification.status == "resolved"
+    assert identification.figi == "BBG1"
+    assert identification.identification_rule == "broker market (no currency match)"
+
+
+async def test_resolve_by_isin_without_currency_is_ambiguous_without_broker_market(
+    tmp_path: Path,
+) -> None:
+    client = _client_with_response(
+        [{"data": [{"figi": "BBG1", "exchCode": "US"}, {"figi": "BBG2", "exchCode": "GR"}]}],
+        tmp_path,
+    )
+
+    identification = await client.resolve_by_isin("US83417M1045")
+
+    assert identification.status == "ambiguous"
+
+
 async def test_resolve_by_ticker_returns_resolved_for_single_match(tmp_path: Path) -> None:
     match = {"figi": "BBG00265DDD0", "ticker": "ISAC", "exchCode": "LN", "securityType": "ETP"}
     client = _client_with_response([{"data": [match]}], tmp_path)
