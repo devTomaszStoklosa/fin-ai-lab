@@ -138,6 +138,12 @@ def attach_current_market_values(positions: list[Position]) -> list[Position]:
     for position in positions:
         ticker = position.ticker or position.symbol
         history = fetch_price_history(ticker) if ticker else None
+        if history is not None:
+            # The most recent trading day can come back as NaN before Yahoo
+            # finalizes it -- drop it rather than silently write
+            # market_value = NaN * quantity (issue #193, same class of bug
+            # already fixed for price_change_ratio in #192).
+            history = history.dropna()
         if history is None or history.empty:
             updated.append(position)
             continue
