@@ -45,6 +45,48 @@ def test_import_xlsx_maps_summary_rows_to_positions() -> None:
     assert atrem.avg_cost == Decimal("12.25")
 
 
+def test_import_xlsx_detects_account_currency_from_marker_row() -> None:
+    # A genuinely USD-denominated XTB account (issue #195) -- the "Open
+    # position value" row states USD, which must override the "PLN" passed
+    # in as market_currency, for every position in the file.
+    registry = ParserRegistry()
+
+    result = import_xlsx(
+        build_synthetic_xtb_workbook(account_currency="USD"),
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        market_currency="PLN",
+        registry=registry,
+    )
+
+    assert result.errors == []
+    assert result.warnings == []
+    assert {p.market_currency for p in result.positions} == {"USD"}
+    assert {p.cost_currency for p in result.positions} == {"USD"}
+
+
+def test_import_xlsx_falls_back_to_default_currency_when_marker_row_missing() -> None:
+    # A file that doesn't match the real export's shape (e.g. a future XTB
+    # format change) -- must not silently mislabel positions, falls back to
+    # the caller-supplied default and says so via a warning.
+    registry = ParserRegistry()
+
+    result = import_xlsx(
+        build_synthetic_xtb_workbook(account_currency=None),
+        valuation_date=date(2026, 9, 15),
+        account_type="regular",
+        market_currency="PLN",
+        registry=registry,
+    )
+
+    assert result.errors == []
+    assert result.warnings == [
+        "Could not detect account currency from 'Open position value' row -- "
+        "defaulting to PLN"
+    ]
+    assert {p.market_currency for p in result.positions} == {"PLN"}
+
+
 def test_build_position_falls_back_to_open_price_without_broker_return() -> None:
     # No "net_profit_pct" mapped at all -- e.g. a broker/parser that
     # doesn't report one. Must behave exactly like before this fix.

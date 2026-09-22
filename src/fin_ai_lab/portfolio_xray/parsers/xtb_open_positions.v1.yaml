@@ -34,3 +34,6 @@ column_mapping:
   "Net Profit %": net_profit_pct
 number_format: en
 delimiter: null
+currency_marker:
+  label: "Open position value"
+  currency_column_offset: 2

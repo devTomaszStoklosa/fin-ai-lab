@@ -11,6 +11,17 @@ class RowFilter(BaseModel):
     require_empty: list[str] = []
 
 
+class CurrencyMarker(BaseModel):
+    # Some brokers (XTB) state the account's own currency in a fixed
+    # metadata row elsewhere in the same sheet, e.g.
+    # ("My Trades", "Open position value", 7088.87, "PLN") -- rather than a
+    # fixed row/column coordinate (fragile if a row gets inserted above it),
+    # this scans the sheet for a cell equal to `label` and reads the
+    # currency `currency_column_offset` columns to its right.
+    label: str
+    currency_column_offset: int
+
+
 class ParserConfig(BaseModel):
     broker: str
     version: int
@@ -23,6 +34,12 @@ class ParserConfig(BaseModel):
     date_format: str = "%Y-%m-%d"
     encoding: str = "utf-8"
     delimiter: str | None = None
+    # Not part of ParserConfigProposal -- the LLM never invents this, only a
+    # human wires it up for a broker whose export is known to state its own
+    # account currency somewhere (see CurrencyMarker). Absent for every
+    # other config, which keeps relying on the caller-supplied fallback
+    # currency exactly as before (issue #195).
+    currency_marker: CurrencyMarker | None = None
 
 
 class ColumnMapping(BaseModel):

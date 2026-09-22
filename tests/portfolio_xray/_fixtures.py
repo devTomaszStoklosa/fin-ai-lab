@@ -25,7 +25,9 @@ XTB_OPEN_POSITIONS_HEADERS = [
 ]
 
 
-def build_synthetic_xtb_workbook(extra_note: str | None = None) -> bytes:
+def build_synthetic_xtb_workbook(
+    extra_note: str | None = None, *, account_currency: str | None = "PLN"
+) -> bytes:
     """A small workbook shaped like the real XTB export: metadata rows before
     the header, then summary rows (Category set) interleaved with per-lot
     detail rows (Type set, Category blank) for the same instrument.
@@ -33,13 +35,24 @@ def build_synthetic_xtb_workbook(extra_note: str | None = None) -> bytes:
     extra_note, when given, is appended as a trailing cell on the first
     summary row — past the declared headers, so it never becomes a mapped
     field, only something a whole-file scan (e.g. injection flagging) sees.
+
+    account_currency, when given, fills the "Open position value" metadata
+    row real XTB exports carry (row 5, matching xtb_open_positions.v1.yaml's
+    currency_marker) -- pass None to omit it and exercise the fallback path.
     """
     workbook = openpyxl.Workbook()
     workbook.active.title = "Closed Positions"
     workbook.create_sheet("Cash Operations")
     sheet = workbook.create_sheet("Open Positions")
 
-    for _ in range(8):
+    for _ in range(4):
+        sheet.append([])
+    sheet.append(
+        ["My Trades", "Open position value", 7088.87, account_currency]
+        if account_currency is not None
+        else []
+    )
+    for _ in range(3):
         sheet.append([])
 
     sheet.append(XTB_OPEN_POSITIONS_HEADERS)
