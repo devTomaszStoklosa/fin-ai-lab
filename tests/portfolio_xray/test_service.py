@@ -8,9 +8,11 @@ import openpyxl
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.identification.openfigi import Identification
+from fin_ai_lab.portfolio_xray.ledger import parse_bossa_csv
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
 from fin_ai_lab.portfolio_xray.service import (
     _xtb_ticker_and_exchange,
+    build_bossa_import_result,
     import_bossa_csv,
     import_file,
 )
@@ -357,6 +359,21 @@ async def test_import_bossa_csv_populates_quote_currency() -> None:
 
     assert result.errors == []
     assert result.positions[0].quote_currency == "PLN"
+
+
+async def test_build_bossa_import_result_replays_a_transaction_list_directly() -> None:
+    # portfolio_webapp's own reason for this split: it stores transactions
+    # across multiple imports and must replay the *combined* list, not
+    # re-parse a single file each time (02-spec.md REQ-021).
+    transactions = parse_bossa_csv(build_synthetic_bossa_csv())
+
+    result = await build_bossa_import_result(
+        transactions, valuation_date=date(2026, 9, 15), account_type="regular"
+    )
+
+    assert result.errors == []
+    assert len(result.positions) == 1
+    assert result.positions[0].isin == SYNTH_A_ISIN
 
 
 async def test_import_bossa_csv_reports_parse_errors() -> None:

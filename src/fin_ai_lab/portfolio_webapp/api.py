@@ -44,6 +44,7 @@ from fin_ai_lab.portfolio_webapp.schemas import (
 )
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
+from fin_ai_lab.portfolio_xray.ledger import BossaTransaction, parse_bossa_csv
 from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
 from fin_ai_lab.portfolio_xray.metrics.price_history import (
     fetch_quote_currency,
@@ -62,7 +63,7 @@ from fin_ai_lab.portfolio_xray.privacy.injection import flag_suspicious_cells
 from fin_ai_lab.portfolio_xray.report.builder import ReportRejectedError, build_report
 from fin_ai_lab.portfolio_xray.report.models import InstrumentMetadata, MetricsJson
 from fin_ai_lab.portfolio_xray.sectors.classifier import classify_sector
-from fin_ai_lab.portfolio_xray.service import import_file
+from fin_ai_lab.portfolio_xray.service import build_bossa_import_result, import_file
 
 BASE_CURRENCY = "PLN"  # matches canonical.Portfolio.base_currency (Literal["PLN"])
 
@@ -183,6 +184,67 @@ def create_app(
             registry=parser_registry_factory(),
             openfigi_client=openfigi_client_factory(),
             quote_currency_fetcher=quote_currency_fetcher,
+        )
+
+    @app.post(
+        "/api/portfolios/{portfolio_id}/import/bossa",
+        response_model=ImportResponse,
+        status_code=201,
+    )
+    async def import_bossa_portfolio_file(
+        portfolio_id: UUID,
+        file: UploadFile = File(...),
+        valuation_date: str = Form(...),
+        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+    ) -> ImportResponse:
+        # Bossa has exactly one known export shape (a transaction ledger, not
+        # a position snapshot) -- no propose/approve step, unlike XTB and any
+        # other row-mapped broker.
+        portfolio, parsed_date = _resolve_portfolio_and_date(
+            connection, portfolio_id, valuation_date
+        )
+
+        try:
+            new_transactions = parse_bossa_csv(await file.read())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail={"errors": [str(exc)], "warnings": []}
+            ) from exc
+
+        injection_warnings = _flag_bossa_injection_warnings(new_transactions)
+        repository.insert_transactions(
+            connection, portfolio_id=portfolio_id, broker="bossa", transactions=new_transactions
+        )
+        # Positions always come from replaying the complete stored ledger,
+        # never from just the file that was just uploaded (REQ-021) -- an
+        # earlier import's holdings must not disappear just because the
+        # latest file only covers a later date range.
+        all_transactions = repository.list_transactions(connection, portfolio_id)
+
+        result = await build_bossa_import_result(
+            all_transactions,
+            account_type=_resolve_account_type(portfolio),
+            valuation_date=parsed_date,
+            openfigi_client=openfigi_client_factory(),
+            # Bossa trades on the Warsaw Stock Exchange; "PW" is OpenFIGI's
+            # real exchange code for it (same one already used for XTB's own
+            # Polish listings), not a guess.
+            broker_market="PW",
+            quote_currency_fetcher=quote_currency_fetcher,
+        )
+        if result.errors:
+            raise HTTPException(
+                status_code=422,
+                detail={"errors": result.errors, "warnings": result.warnings + injection_warnings},
+            )
+
+        return _persist_snapshot_and_positions(
+            connection,
+            portfolio_id=portfolio_id,
+            broker="bossa",
+            valuation_date=parsed_date,
+            positions=result.positions,
+            warnings=result.warnings + injection_warnings,
         )
 
     @app.post(
@@ -801,17 +863,45 @@ async def _import_and_persist(
     # creation). Falls back to the portfolio's label only when a "known
     # format" import somehow yields zero positions.
     broker = result.positions[0].broker if result.positions else (portfolio[2] or "unknown")
+    return _persist_snapshot_and_positions(
+        connection,
+        portfolio_id=portfolio_id,
+        broker=broker,
+        valuation_date=valuation_date,
+        positions=result.positions,
+        warnings=result.warnings,
+    )
+
+
+def _persist_snapshot_and_positions(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    portfolio_id: UUID,
+    broker: str,
+    valuation_date: date_type,
+    positions: list[Position],
+    warnings: list[str],
+) -> ImportResponse:
+    """Shared by every import path (XTB, Bossa, and any future propose/approve
+    broker) once it has a resolved position list ready to store -- freshly
+    imported, so already "now", no live-refresh attempt needed."""
     snapshot_row = repository.create_snapshot(
         connection, portfolio_id=portfolio_id, broker=broker, valuation_date=valuation_date
     )
-    repository.insert_positions(connection, snapshot_id=snapshot_row[0], positions=result.positions)
+    repository.insert_positions(connection, snapshot_id=snapshot_row[0], positions=positions)
     position_rows = repository.list_positions(connection, snapshot_row[0])
-
     return ImportResponse(
-        # Freshly imported -- already "now", no live-refresh attempt needed.
         snapshot=_to_snapshot_out(snapshot_row, [_to_position_out(p) for p in position_rows]),
-        warnings=result.warnings,
+        warnings=warnings,
     )
+
+
+def _flag_bossa_injection_warnings(transactions: list[BossaTransaction]) -> list[str]:
+    # Only instrument_name is genuine freeform text in a Bossa row (isin and
+    # currency are fixed-format codes) -- and it's exactly the field that
+    # survives into Position.instrument_name and, from there, into report
+    # prompts (REQ-004). Bossa's import had no such scan at all before this.
+    return flag_suspicious_cells([(t.instrument_name,) for t in transactions])
 
 
 def _flag_injection_warnings(sheets: dict[str, list[tuple[object, ...]]]) -> list[str]:

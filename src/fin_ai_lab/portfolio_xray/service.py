@@ -8,6 +8,7 @@ from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import Identification, OpenFigiClient
 from fin_ai_lab.portfolio_xray.importer import ImportResult, deduplicate_positions, import_xlsx
 from fin_ai_lab.portfolio_xray.ledger import (
+    BossaTransaction,
     attach_current_market_values,
     parse_bossa_csv,
     transactions_to_positions,
@@ -117,6 +118,29 @@ async def import_bossa_csv(
     except ValueError as exc:
         return ImportResult(positions=[], errors=[str(exc)], warnings=[])
 
+    return await build_bossa_import_result(
+        transactions,
+        account_type=account_type,
+        valuation_date=valuation_date,
+        openfigi_client=openfigi_client,
+        broker_market=broker_market,
+        quote_currency_fetcher=quote_currency_fetcher,
+    )
+
+
+async def build_bossa_import_result(
+    transactions: list[BossaTransaction],
+    *,
+    account_type: AccountType,
+    valuation_date: date,
+    openfigi_client: OpenFigiClient | None = None,
+    broker_market: str | None = None,
+    quote_currency_fetcher: Callable[[str], str | None] | None = None,
+) -> ImportResult:
+    """The replay -> resolve -> attach tail of import_bossa_csv, split out so
+    a caller that already has a transaction list (portfolio_webapp, replaying
+    the complete stored ledger across multiple imports -- 02-spec.md
+    REQ-021) can reuse it without re-parsing a file each time."""
     positions, errors = transactions_to_positions(
         transactions, account_type=account_type, valuation_date=valuation_date
     )
