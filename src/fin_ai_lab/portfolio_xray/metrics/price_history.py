@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +34,29 @@ def fetch_price_history(ticker: str, cache_dir: Path = CACHE_DIR) -> pd.Series |
     )
     cache_path.write_text(json.dumps(payload), encoding="utf-8")
     return closes
+
+
+def price_change_ratio(ticker: str, since: date, cache_dir: Path = CACHE_DIR) -> Decimal | None:
+    # A same-ticker ratio (latest close / close on-or-before `since`) never
+    # needs to know what currency yfinance quotes the ticker in -- unlike an
+    # absolute price, it can be applied directly to an already-correct,
+    # already-currency-labeled stored value. See fin-ai-lab#188 for why
+    # trusting an absolute foreign price at face value is a trap.
+    history = fetch_price_history(ticker, cache_dir=cache_dir)
+    if history is None or history.empty:
+        return None
+
+    closes_by_date = {timestamp.date(): value for timestamp, value in history.items()}
+    eligible_dates = [d for d in closes_by_date if d <= since]
+    if not eligible_dates:
+        return None
+
+    reference_close = closes_by_date[max(eligible_dates)]
+    if reference_close == 0:
+        return None
+
+    latest_close = history.iloc[-1]
+    return Decimal(str(latest_close)) / Decimal(str(reference_close))
 
 
 def _slug(ticker: str) -> str:

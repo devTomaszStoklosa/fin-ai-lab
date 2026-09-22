@@ -35,6 +35,7 @@ from fin_ai_lab.portfolio_webapp.schemas import (
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
+from fin_ai_lab.portfolio_xray.metrics.price_history import price_change_ratio
 from fin_ai_lab.portfolio_xray.metrics.weights import compute_weights
 from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
 from fin_ai_lab.portfolio_xray.parsers.correction import (
@@ -91,6 +92,10 @@ def create_app(
     # mid_rate), which is all every position in this app has today, but the
     # factory keeps the DI pattern consistent with the app's other clients.
     fx_client_factory: Callable[[], NbpFxClient] = NbpFxClient,
+    # Not a client-factory like the others -- price_change_ratio is already
+    # a plain function (P1 has no class here). Tests substitute a fake
+    # returning canned ratios instead of calling yfinance.
+    price_ratio_fetcher: Callable[[str, date_type], Decimal | None] = price_change_ratio,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -254,17 +259,29 @@ def create_app(
         )
 
     @app.get("/api/portfolios/{portfolio_id}/snapshots", response_model=list[SnapshotOut])
-    def list_snapshots(
+    async def list_snapshots(
         portfolio_id: UUID,
         connection: duckdb.DuckDBPyConnection = Depends(_get_db),
     ) -> list[SnapshotOut]:
         if repository.get_portfolio(connection, portfolio_id) is None:
             raise HTTPException(status_code=404, detail="Portfolio not found")
 
-        return [
-            _to_snapshot_out(row, repository.list_positions(connection, row[0]))
-            for row in repository.list_snapshots(connection, portfolio_id)
-        ]
+        result: list[SnapshotOut] = []
+        for index, row in enumerate(repository.list_snapshots(connection, portfolio_id)):
+            position_rows = repository.list_positions(connection, row[0])
+            # Only the latest snapshot (index 0) represents "now" in the UI
+            # -- older ones are history (S7) and keep showing what they
+            # showed at import time, so only this one's positions get a
+            # live-refreshed value (issue #190).
+            if index == 0:
+                positions = [
+                    await _to_position_out_with_live_value(p, price_ratio_fetcher)
+                    for p in position_rows
+                ]
+            else:
+                positions = [_to_position_out(p) for p in position_rows]
+            result.append(_to_snapshot_out(row, positions))
+        return result
 
     @app.get("/api/portfolios/{portfolio_id}/positions", response_model=list[PositionOut])
     def list_manual_positions(
@@ -341,13 +358,15 @@ def create_app(
 
         rows = _current_position_rows(connection, portfolio_id)
         fx_client = fx_client_factory()
-        positions_with_base_value = [
-            (
-                position,
-                await _base_currency_value(position, fx_client),
+        positions_with_base_value = []
+        for row in rows:
+            position = _position_row_to_domain(row)
+            live_value = await _live_market_value(position, price_ratio_fetcher)
+            if live_value is not None:
+                position = position.model_copy(update={"market_value": live_value})
+            positions_with_base_value.append(
+                (position, await _base_currency_value(position, fx_client))
             )
-            for position in (_position_row_to_domain(row) for row in rows)
-        ]
 
         try:
             weights = compute_weights(positions_with_base_value)
@@ -660,7 +679,8 @@ async def _import_and_persist(
     position_rows = repository.list_positions(connection, snapshot_row[0])
 
     return ImportResponse(
-        snapshot=_to_snapshot_out(snapshot_row, position_rows),
+        # Freshly imported -- already "now", no live-refresh attempt needed.
+        snapshot=_to_snapshot_out(snapshot_row, [_to_position_out(p) for p in position_rows]),
         warnings=result.warnings,
     )
 
@@ -693,7 +713,7 @@ def _to_portfolio_out(row: PortfolioRow) -> PortfolioOut:
     )
 
 
-def _to_position_out(row: PositionRow) -> PositionOut:
+def _to_position_out(row: PositionRow, *, live_market_value: Decimal | None = None) -> PositionOut:
     (
         id_,
         _snapshot_id,
@@ -715,6 +735,7 @@ def _to_position_out(row: PositionRow) -> PositionOut:
         exchange_code,
         identification_rule,
     ) = row
+    effective_market_value = market_value if live_market_value is None else live_market_value
     return PositionOut(
         id=id_,
         broker=broker,
@@ -726,7 +747,7 @@ def _to_position_out(row: PositionRow) -> PositionOut:
         quantity=quantity,
         avg_cost=avg_cost,
         cost_currency=cost_currency,
-        market_value=market_value,
+        market_value=effective_market_value,
         market_currency=market_currency,
         valuation_date=valuation_date,
         resolution_status=resolution_status,
@@ -738,10 +759,46 @@ def _to_position_out(row: PositionRow) -> PositionOut:
             quantity=quantity,
             avg_cost=avg_cost,
             cost_currency=cost_currency,
-            market_value=market_value,
+            market_value=effective_market_value,
             market_currency=market_currency,
         ),
     )
+
+
+async def _to_position_out_with_live_value(
+    row: PositionRow, price_ratio_fetcher: Callable[[str, date_type], Decimal | None]
+) -> PositionOut:
+    live_value = await _live_market_value(_position_row_to_domain(row), price_ratio_fetcher)
+    return _to_position_out(row, live_market_value=live_value)
+
+
+async def _live_market_value(
+    position: Position, price_ratio_fetcher: Callable[[str, date_type], Decimal | None]
+) -> Decimal | None:
+    # Ratio of latest close to the close on the position's own valuation
+    # date, applied to the already-stored (already-correct-currency) value
+    # -- never needs to know what currency the ticker is quoted in (#188).
+    # Manual positions are the owner's own explicit input, left untouched.
+    if position.broker == repository.MANUAL_BROKER:
+        return None
+    if position.market_value is None or position.quantity <= 0:
+        return None
+    yfinance_ticker = position.ticker or position.symbol
+    if yfinance_ticker is None:
+        return None
+
+    try:
+        ratio = await asyncio.to_thread(
+            price_ratio_fetcher, yfinance_ticker, position.valuation_date
+        )
+    except Exception:
+        # yfinance is unofficial and sometimes blocked (docs/DATA-SOURCES.md)
+        # -- a live-refresh failure must fall back to the stored value, never
+        # break the page.
+        return None
+    if ratio is None:
+        return None
+    return (position.market_value * ratio).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _return_pct(
@@ -852,7 +909,7 @@ def _to_report_out(row: repository.ReportRow) -> ReportOut:
     )
 
 
-def _to_snapshot_out(row: SnapshotRow, position_rows: list[PositionRow]) -> SnapshotOut:
+def _to_snapshot_out(row: SnapshotRow, positions: list[PositionOut]) -> SnapshotOut:
     id_, portfolio_id, broker, valuation_date, imported_at, date_min, date_max = row
     return SnapshotOut(
         id=id_,
@@ -862,5 +919,5 @@ def _to_snapshot_out(row: SnapshotRow, position_rows: list[PositionRow]) -> Snap
         imported_at=imported_at,
         source_file_date_min=date_min,
         source_file_date_max=date_max,
-        positions=[_to_position_out(p) for p in position_rows],
+        positions=positions,
     )
