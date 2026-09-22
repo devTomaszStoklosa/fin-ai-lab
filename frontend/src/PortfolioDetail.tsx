@@ -340,7 +340,15 @@ function PortfolioDetail({ portfolio, onBack }: Props) {
             <tbody>
               {displayPositions.map((position) => (
                 <tr key={position.id}>
-                  <td>{position.instrument_name}</td>
+                  <td>
+                    {position.instrument_name}
+                    {position.quote_currency && position.quote_currency !== position.market_currency && (
+                      <>
+                        {' '}
+                        <span className="muted small">(notowany w {position.quote_currency})</span>
+                      </>
+                    )}
+                  </td>
                   <td className="muted">{position.isin ?? position.symbol ?? '—'}</td>
                   <td>{trimTrailingZeros(position.quantity)}</td>
                   <td>

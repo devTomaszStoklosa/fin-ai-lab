@@ -65,6 +65,24 @@ def price_change_ratio(ticker: str, since: date, cache_dir: Path = CACHE_DIR) ->
     return Decimal(str(latest_close)) / Decimal(str(reference_close))
 
 
+def fetch_quote_currency(ticker: str, cache_dir: Path = CACHE_DIR) -> str | None:
+    # Separate cache entry from fetch_price_history: a different yfinance
+    # call (fast_info, not history()), and this one rarely changes, so
+    # there's no reason to pay for both on every price-only lookup.
+    cache_path = cache_dir / f"{_slug(ticker)}_{date.today().isoformat()}_currency.json"
+    if cache_path.exists():
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        return cached["currency"]
+
+    import yfinance as yf  # local import: same reasoning as fetch_price_history
+
+    currency = yf.Ticker(ticker).fast_info.get("currency")
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps({"currency": currency}), encoding="utf-8")
+    return currency
+
+
 # OpenFIGI's Bloomberg-style exchange code -> Yahoo Finance's own ticker
 # suffix. Only the exchanges this repo's imports have actually resolved to
 # are mapped (verified live: ISAC.L, ATR.WA both return real price history)

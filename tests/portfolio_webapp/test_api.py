@@ -114,11 +114,17 @@ def _client_with_tracked_llm(
     return TestClient(app), created
 
 
-def _client_with_price_fetcher(tmp_path: Path, fetcher, openfigi_client=None) -> TestClient:
+def _client_with_price_fetcher(
+    tmp_path: Path, fetcher, openfigi_client=None, quote_currency_fetcher=None
+) -> TestClient:
     app = create_app(
         db_path=tmp_path / "test.duckdb",
         openfigi_client_factory=lambda: openfigi_client,
         price_ratio_fetcher=fetcher,
+        # Defaults to a hermetic fake, same reasoning as price_ratio_fetcher
+        # above -- a test that actually cares about quote_currency passes
+        # its own.
+        quote_currency_fetcher=quote_currency_fetcher or (lambda ticker: None),
     )
     return TestClient(app)
 
@@ -303,6 +309,35 @@ def test_live_price_fetcher_receives_yahoo_translated_ticker(tmp_path: Path) -> 
         assert response.status_code == 200
         assert "ISAC.L" in seen_tickers
         assert "ISAC.UK" not in seen_tickers
+
+
+def test_import_populates_quote_currency_from_resolved_ticker(tmp_path: Path) -> None:
+    # ISAC.UK trades in USD even when held in a PLN account (issue #197) --
+    # quote_currency must reflect that, independently of market_currency.
+    stub = _StubOpenFigiClient(
+        Identification(
+            status="resolved",
+            figi="BBG00265DDD0",
+            ticker="ISAC",
+            exchange_code="LN",
+            identification_rule="ticker and exchange",
+        )
+    )
+    with _client_with_price_fetcher(
+        tmp_path,
+        lambda ticker, since: None,
+        openfigi_client=stub,
+        quote_currency_fetcher=lambda ticker: "USD" if ticker == "ISAC.L" else None,
+    ) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(client, portfolio_id, build_synthetic_xtb_workbook(), "2026-09-20")
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/snapshots")
+
+        positions = response.json()[0]["positions"]
+        acwi = next(p for p in positions if p["symbol"] == "ISAC.UK")
+        assert acwi["quote_currency"] == "USD"
+        assert acwi["market_currency"] == "PLN"
 
 
 def test_older_snapshot_positions_keep_stored_value(tmp_path: Path) -> None:
@@ -544,7 +579,11 @@ def test_create_manual_position_resolves_isin_through_openfigi(tmp_path: Path) -
             identification_rule="only listing in currency",
         )
     )
-    app = create_app(db_path=tmp_path / "test.duckdb", openfigi_client_factory=lambda: stub)
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: stub,
+        quote_currency_fetcher=lambda ticker: None,
+    )
     with TestClient(app) as client:
         portfolio_id = _create_portfolio(client)
 
