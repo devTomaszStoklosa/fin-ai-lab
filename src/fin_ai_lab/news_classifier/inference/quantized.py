@@ -14,10 +14,17 @@ PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 class ChatCompletionClient(Protocol):
     """Just enough of `llama_cpp.Llama`'s interface for `classify_quantized`
     to depend on — an injection seam (SOLID D) so tests never need a real
-    GGUF file or the `quantized` extra installed."""
+    GGUF file or the `quantized` extra installed. `grammar` is typed as
+    `object` (not `llama_cpp.LlamaGrammar`) for the same reason: this
+    module must stay importable without the extra."""
 
     def create_chat_completion(
-        self, messages: list[dict], *, max_tokens: int, temperature: float
+        self,
+        messages: list[dict],
+        *,
+        max_tokens: int,
+        temperature: float,
+        grammar: object | None = None,
     ) -> dict: ...
 
 
@@ -28,6 +35,22 @@ def load_llm(model_path: Path) -> ChatCompletionClient:
     # correct again — the real (correctly tokenized) prompt, including the
     # ticker catalog, runs 640-670 tokens; 2048 leaves headroom to grow.
     return Llama(model_path=str(model_path), n_ctx=2048, verbose=False)
+
+
+def _build_label_grammar() -> object:
+    # Issue #160: on a longer narrative-paragraph prompt, the lightly
+    # fine-tuned LoRA sometimes ignores the instruction entirely and
+    # echoes/continues the input as free-form prose instead of the
+    # expected JSON. Grammar-constrained decoding masks every token that
+    # doesn't fit the schema at each sampling step, which makes that
+    # specific failure mode structurally impossible -- prose text isn't
+    # valid at any position in a strict Label-shaped JSON grammar. It
+    # can't fix a wrong classification, only a malformed one; llama.cpp's
+    # own numerical precision and the LoRA's training quality are both
+    # untouched (both explicitly out of scope for this repo per #160).
+    from llama_cpp import LlamaGrammar
+
+    return LlamaGrammar.from_json_schema(json.dumps(Label.model_json_schema()))
 
 
 def classify_quantized(
@@ -50,10 +73,12 @@ def classify_quantized(
     `llm` is an injected chat-completion client (SOLID D) — `load_llm`
     builds a real one from `model_path` when `llm` isn't given, but a
     test can pass a stub instead."""
+    grammar = None
     if llm is None:
         if model_path is None:
             raise ValueError("classify_quantized needs either model_path or llm")
         llm = load_llm(model_path)
+        grammar = _build_label_grammar()
 
     prompts = PromptRegistry()
     prompts.load_dir(PROMPTS_DIR)
@@ -65,7 +90,10 @@ def classify_quantized(
     )
 
     result = llm.create_chat_completion(
-        messages=[{"role": "user", "content": rendered}], max_tokens=128, temperature=0.0
+        messages=[{"role": "user", "content": rendered}],
+        max_tokens=128,
+        temperature=0.0,
+        grammar=grammar,
     )
     completion = result["choices"][0]["message"]["content"]
     try:
