@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
-from fin_ai_lab.portfolio_xray.metrics.price_history import fetch_price_history
+from fin_ai_lab.portfolio_xray.metrics.price_history import fetch_price_history, to_yahoo_ticker
 
 # Bossa's own encoding/delimiter for this export (confirmed against the real
 # file: bytes 0x9C/0xE6 decode as "ś"/"ć" only under cp1250, and the header
@@ -136,7 +136,15 @@ def attach_current_market_values(positions: list[Position]) -> list[Position]:
     history, keeps market_value=None rather than guessing."""
     updated = []
     for position in positions:
-        ticker = position.ticker or position.symbol
+        # OpenFIGI's own ticker ("1AT") isn't Yahoo's symbol for the same
+        # listing ("1AT.WA") -- translate it the same way service.py's
+        # quote_currency fetch and the XTB live-refresh path already do
+        # (issue #208). position.symbol (XTB's own broker symbol) needs no
+        # such translation and is never set on a Bossa position anyway.
+        if position.ticker is not None:
+            ticker = to_yahoo_ticker(position.ticker, position.exchange_code)
+        else:
+            ticker = position.symbol
         history = fetch_price_history(ticker) if ticker else None
         if history is not None:
             # The most recent trading day can come back as NaN before Yahoo

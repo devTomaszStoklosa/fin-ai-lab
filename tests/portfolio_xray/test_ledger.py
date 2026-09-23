@@ -149,6 +149,44 @@ def test_attach_current_market_values_uses_latest_close(monkeypatch: pytest.Monk
     assert updated[0].market_currency == "PLN"
 
 
+def test_attach_current_market_values_translates_ticker_to_yahoo_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # OpenFIGI's own ticker ("1AT") isn't Yahoo's symbol ("1AT.WA") -- issue
+    # #208, verified live: fetch_price_history must be called with the
+    # translated ticker, not the raw OpenFIGI one, or every Bossa position
+    # keeps market_value=None even when resolved.
+    history = pd.Series([60.3], index=pd.to_datetime(["2026-09-22"]))
+    seen_tickers: list[str] = []
+
+    def recording_fetcher(ticker: str):
+        seen_tickers.append(ticker)
+        return history
+
+    monkeypatch.setattr("fin_ai_lab.portfolio_xray.ledger.fetch_price_history", recording_fetcher)
+    position = Position(
+        broker="bossa",
+        account_type="regular",
+        instrument_name="ATAL",
+        isin="PLATAL000046",
+        symbol=None,
+        ticker="1AT",
+        exchange_code="PW",
+        asset_class="other",
+        quantity=Decimal("53"),
+        avg_cost=Decimal("62.79"),
+        cost_currency="PLN",
+        market_value=None,
+        market_currency=None,
+        valuation_date=date(2026, 9, 15),
+    )
+
+    updated = attach_current_market_values([position])
+
+    assert seen_tickers == ["1AT.WA"]
+    assert updated[0].market_value == Decimal("60.3") * Decimal("53")
+
+
 def test_attach_current_market_values_drops_trailing_nan_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
