@@ -170,6 +170,21 @@ export function fetchSnapshots(portfolioId: string): Promise<Snapshot[]> {
   return fetch(`/api/portfolios/${portfolioId}/snapshots`).then((r) => asJson(r))
 }
 
+async function asImportResponse<T>(response: Response): Promise<T> {
+  // An HTTPException we raise ourselves comes back as {detail: {errors,
+  // warnings}}, but an *unhandled* exception (e.g. a value that slips past
+  // our own validation, like issue #186's decimal parse crash) gets
+  // FastAPI's default plain-text 500 body, not JSON -- parsing that
+  // unconditionally throws and hides the real error behind a JSON parse
+  // failure. Parse safely first, then decide what to show.
+  const body = await response.json().catch(() => null)
+  if (!response.ok) {
+    const detail = body?.detail ?? {}
+    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
+  }
+  return body as T
+}
+
 export async function importFile(
   portfolioId: string,
   file: File,
@@ -183,13 +198,7 @@ export async function importFile(
     method: 'POST',
     body: formData,
   })
-  const body = await response.json()
-
-  if (!response.ok) {
-    const detail = body.detail ?? {}
-    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
-  }
-  return body as { snapshot: Snapshot; warnings: string[] }
+  return asImportResponse(response)
 }
 
 export async function importBossaFile(
@@ -205,13 +214,7 @@ export async function importBossaFile(
     method: 'POST',
     body: formData,
   })
-  const body = await response.json()
-
-  if (!response.ok) {
-    const detail = body.detail ?? {}
-    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
-  }
-  return body as { snapshot: Snapshot; warnings: string[] }
+  return asImportResponse(response)
 }
 
 export async function proposeImportConfig(
@@ -229,13 +232,7 @@ export async function proposeImportConfig(
     method: 'POST',
     body: formData,
   })
-  const body = await response.json()
-
-  if (!response.ok) {
-    const detail = body.detail ?? {}
-    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
-  }
-  return body as ProposePreview
+  return asImportResponse(response)
 }
 
 export function fetchPositions(portfolioId: string): Promise<Position[]> {
@@ -311,13 +308,7 @@ export async function approveImportConfig(
     method: 'POST',
     body: formData,
   })
-  const body = await response.json()
-
-  if (!response.ok) {
-    const detail = body.detail ?? {}
-    throw new ImportFailure(detail.errors ?? [response.statusText], detail.warnings ?? [])
-  }
-  return body as { snapshot: Snapshot; warnings: string[] }
+  return asImportResponse(response)
 }
 
 async function asJsonOrDetailError<T>(response: Response): Promise<T> {
