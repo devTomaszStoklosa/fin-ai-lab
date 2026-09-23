@@ -33,7 +33,7 @@ def _dedup(headlines: list[LabeledHeadline]) -> list[LabeledHeadline]:
     seen: set[str] = set()
     deduped: list[LabeledHeadline] = []
     for item in headlines:
-        key = _normalize(item.headline.headline)
+        key = normalize_headline_text(item.headline.headline)
         if key in seen:
             continue
         seen.add(key)
@@ -41,5 +41,9 @@ def _dedup(headlines: list[LabeledHeadline]) -> list[LabeledHeadline]:
     return deduped
 
 
-def _normalize(text: str) -> str:
+def normalize_headline_text(text: str) -> str:
+    # Public (not split.py-private) so labeling/progress.py's
+    # dedupe_pending_by_text (issue #121) uses the same near-duplicate rule
+    # as this module's own split-time dedup, instead of a third,
+    # inconsistent normalization.
     return _WHITESPACE_RE.sub(" ", text).strip().lower()

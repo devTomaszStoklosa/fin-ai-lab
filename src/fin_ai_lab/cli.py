@@ -39,6 +39,7 @@ from fin_ai_lab.news_classifier.comparison_report import (
 from fin_ai_lab.news_classifier.corpus_store import append_labeled, load_labeled
 from fin_ai_lab.news_classifier.ingest.news_rss import collect_headlines
 from fin_ai_lab.news_classifier.labeling.progress import (
+    dedupe_pending_by_text,
     headline_key,
     load_labeled_keys,
     save_labeled_keys,
@@ -367,6 +368,10 @@ def news_classifier_label(
 
     async def run() -> tuple[int, list[str]]:
         headlines = await collect_headlines()
+        # Overlapping RSS feeds (bankier's two categories) cross-post the
+        # same story -- dedupe before checking what's already labeled, so
+        # a within-run duplicate never costs a second teacher call (#121).
+        headlines = dedupe_pending_by_text(headlines)
         already_labeled = load_labeled_keys()
         pending = unlabeled(headlines, already_labeled)
 
