@@ -1,11 +1,9 @@
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
-import httpx
-
+from fin_ai_lab.core.data.nbp import NBP_BASE_URL, fetch_nbp_rate
 from fin_ai_lab.core.http.client import ThrottledHttpClient
 
-NBP_BASE_URL = "https://api.nbp.pl"
 # NBP docs (api.nbp.pl/en.html, verified 2026-09-16) state no explicit rate
 # limit ("zachowaj umiar" per docs/DATA-SOURCES.md) — this is our own,
 # deliberately modest choice, not a documented threshold.
@@ -37,21 +35,14 @@ class NbpFxClient:
         )
 
     async def _rate_from_table(self, table: str, currency: str, as_of: date) -> Decimal | None:
-        current_date = as_of
-        for _ in range(MAX_LOOKBACK_DAYS):
-            path = (
-                f"/api/exchangerates/rates/{table}/{currency.lower()}"
-                f"/{current_date.isoformat()}/"
-            )
-            try:
-                response = await self._http_client.get(path, params={"format": "json"})
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    current_date -= timedelta(days=1)
-                    continue
-                raise
-            return Decimal(str(response["rates"][0]["mid"]))
-        return None
+        result = await fetch_nbp_rate(
+            self._http_client,
+            table=table,
+            code=currency,
+            as_of=as_of,
+            max_lookback_days=MAX_LOOKBACK_DAYS,
+        )
+        return result[0] if result is not None else None
 
 
 async def convert_to_base_currency(
