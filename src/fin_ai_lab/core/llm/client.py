@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol
 
+import httpx
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -68,9 +69,32 @@ def _to_contents(messages: list[dict]) -> list[types.ContentDict]:
     return [{"role": m["role"], "parts": [{"text": m["text"]}]} for m in messages]
 
 
+# Transient server-side errors only. 429 is deliberately excluded: the free
+# tier's daily cap (docs/LLM-API.md) does not clear within seconds, so
+# retrying it just burns time (and possibly quota).
+DEFAULT_RETRY_OPTIONS = types.HttpRetryOptions(
+    attempts=4,
+    initial_delay=2.0,
+    max_delay=30.0,
+    http_status_codes=[500, 502, 503, 504],
+)
+
+
 class GeminiLlmClient:
-    def __init__(self, api_key: str, trace_sink: TraceSink | None = None) -> None:
-        self._client = genai.Client(api_key=api_key)
+    def __init__(
+        self,
+        api_key: str,
+        trace_sink: TraceSink | None = None,
+        *,
+        retry_options: types.HttpRetryOptions = DEFAULT_RETRY_OPTIONS,
+        httpx_async_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(
+                retry_options=retry_options, httpx_async_client=httpx_async_client
+            ),
+        )
         self._trace_sink = trace_sink or TraceSink()
         self.total_cost_usd = Decimal(0)
 
