@@ -1,12 +1,12 @@
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from xml.etree import ElementTree
 
 import httpx
 
+from fin_ai_lab.core.data.nbp import NBP_BASE_URL, fetch_nbp_rate
 from fin_ai_lab.core.http.client import ThrottledHttpClient
 
-NBP_BASE_URL = "https://api.nbp.pl"
 NBP_RATES_URL = "https://static.nbp.pl/dane/stopy/stopy_procentowe.xml"
 # No published limit ("zachowaj umiar", docs/DATA-SOURCES.md) — kept
 # conservative anyway.
@@ -30,19 +30,9 @@ class NbpClient:
         found — a dated request (not the "currently in effect" endpoint)
         so each day's answer is its own, permanently valid cache entry."""
         as_of = as_of or date.today()
-        for offset in range(MAX_LOOKBACK_DAYS):
-            day = as_of - timedelta(days=offset)
-            try:
-                data = await self._fx.get(
-                    f"/api/exchangerates/rates/a/{code.lower()}/{day.isoformat()}/"
-                )
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    continue
-                raise
-            rate = data["rates"][0]
-            return Decimal(str(rate["mid"])), date.fromisoformat(rate["effectiveDate"])
-        return None
+        return await fetch_nbp_rate(
+            self._fx, table="a", code=code, as_of=as_of, max_lookback_days=MAX_LOOKBACK_DAYS
+        )
 
 
 async def fetch_reference_rate() -> tuple[Decimal, date]:
