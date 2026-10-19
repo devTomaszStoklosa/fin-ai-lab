@@ -1,5 +1,6 @@
 """Helpers shared by the routers."""
 
+from datetime import date as date_type
 from decimal import ROUND_HALF_UP, Decimal
 from typing import cast, get_args
 from uuid import UUID
@@ -176,3 +177,22 @@ def require_breakdown(connection: duckdb.DuckDBPyConnection, breakdown_id: UUID)
     if breakdown is None:
         raise HTTPException(status_code=404, detail="Breakdown not found")
     return breakdown
+
+
+def current_reporting_context(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID
+) -> tuple[UUID, date_type] | None:
+    # The snapshot id a report gets cached against, and the valuation date
+    # put in front of the LLM -- the latest real import if one exists
+    # (its own valuation_date), else the manual-positions container (dated
+    # today, since manual positions don't carry one collective date).
+    # Editing a manual position afterwards doesn't change this id, so a
+    # cached report can go stale until the owner clicks "Odśwież" --
+    # accepted trade-off (REQ-041 already provides that escape hatch).
+    snapshots = repository.list_snapshots(connection, portfolio_id)
+    if snapshots:
+        return snapshots[0][0], snapshots[0][3]
+    manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
+    if manual_snapshot is not None:
+        return manual_snapshot[0], date_type.today()
+    return None
