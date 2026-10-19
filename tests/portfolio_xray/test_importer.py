@@ -81,8 +81,7 @@ def test_import_xlsx_falls_back_to_default_currency_when_marker_row_missing() ->
 
     assert result.errors == []
     assert result.warnings == [
-        "Could not detect account currency from 'Open position value' row -- "
-        "defaulting to PLN"
+        "Could not detect account currency from 'Open position value' row -- defaulting to PLN"
     ]
     assert {p.market_currency for p in result.positions} == {"PLN"}
 

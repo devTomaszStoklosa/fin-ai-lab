@@ -17,22 +17,32 @@ def _prompt_registry() -> PromptRegistry:
 
 def _us_indicator() -> IndicatorObservation:
     return IndicatorObservation(
-        series_id="DGS10", label="Rentowność 10Y", value=Decimal("4.5"),
-        unit="%", as_of_date="2026-09-17", source="fred",
+        series_id="DGS10",
+        label="Rentowność 10Y",
+        value=Decimal("4.5"),
+        unit="%",
+        as_of_date="2026-09-17",
+        source="fred",
     )
 
 
 def _pl_indicator() -> IndicatorObservation:
     return IndicatorObservation(
-        series_id="EUR/PLN", label="EUR/PLN", value=Decimal("4.3"),
-        unit="PLN", as_of_date="2026-09-17", source="nbp-fx",
+        series_id="EUR/PLN",
+        label="EUR/PLN",
+        value=Decimal("4.3"),
+        unit="PLN",
+        as_of_date="2026-09-17",
+        source="nbp-fx",
     )
 
 
 def _news_item() -> NewsItem:
     return NewsItem(
-        title="Spółka X ogłasza wyniki", summary="Zysk wzrósł o 10%.",
-        source="bankier", link="https://example.com/x",
+        title="Spółka X ogłasza wyniki",
+        summary="Zysk wzrósł o 10%.",
+        source="bankier",
+        link="https://example.com/x",
     )
 
 
@@ -58,7 +68,9 @@ async def test_build_brief_dispatches_one_worker_call_per_domain_and_assembles_t
 
     assert len(llm_client.requests) == 3
     assert {request.prompt_id for request in llm_client.requests} == {
-        "brief_us", "brief_pl", "brief_news",
+        "brief_us",
+        "brief_pl",
+        "brief_news",
     }
     assert "Reżim rynku: neutral" in brief.text
     assert "Rentowność 10-letnich obligacji USA to 4.5%." in brief.text

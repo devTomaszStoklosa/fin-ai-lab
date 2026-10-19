@@ -38,9 +38,13 @@ def _portfolio() -> Portfolio:
         valuation_date=date(2026, 9, 17),
         positions=[
             Position(
-                broker="xtb", account_type="regular", instrument_name="Orlen",
-                asset_class="equity", quantity=Decimal("10"),
-                market_value=Decimal("1000"), market_currency="PLN",
+                broker="xtb",
+                account_type="regular",
+                instrument_name="Orlen",
+                asset_class="equity",
+                quantity=Decimal("10"),
+                market_value=Decimal("1000"),
+                market_currency="PLN",
                 valuation_date=date(2026, 9, 17),
             )
         ],
@@ -73,8 +77,14 @@ async def test_compare_committee_vs_single_runs_both_variants_and_judges_quality
     )
 
     report = await compare_committee_vs_single(
-        _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", Decimal("1.00"),
+        _portfolio(),
+        "portfolio-1",
+        _FakeFredClient(),
+        _FakeNbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        Decimal("1.00"),
         fx_client=_FakeFxClient(),
     )
 
@@ -99,8 +109,14 @@ async def test_compare_committee_vs_single_defaults_unknown_verdict_letter_to_ti
     )
 
     report = await compare_committee_vs_single(
-        _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", Decimal("1.00"),
+        _portfolio(),
+        "portfolio-1",
+        _FakeFredClient(),
+        _FakeNbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        Decimal("1.00"),
         fx_client=_FakeFxClient(),
     )
 

@@ -34,9 +34,7 @@ async def test_ask_returns_the_llm_text_and_passes_tools() -> None:
 
 
 async def test_ask_exposes_which_tools_the_model_called() -> None:
-    llm_client = FakeLlmClient(
-        {"ask": "EUR/PLN = 4.3."}, tool_calls={"ask": ["get_nbp_fx_rate"]}
-    )
+    llm_client = FakeLlmClient({"ask": "EUR/PLN = 4.3."}, tool_calls={"ask": ["get_nbp_fx_rate"]})
 
     answer = await ask(
         "Jaki jest kurs EUR/PLN?",

@@ -7,8 +7,12 @@ from fin_ai_lab.market_pulse.state import changes_since_previous, load_previous,
 
 def _observation(value: str, series_id: str = "DGS10") -> IndicatorObservation:
     return IndicatorObservation(
-        series_id=series_id, label="10Y", value=Decimal(value), unit="%",
-        as_of_date=date(2026, 9, 17), source="fred",
+        series_id=series_id,
+        label="10Y",
+        value=Decimal(value),
+        unit="%",
+        as_of_date=date(2026, 9, 17),
+        source="fred",
     )
 
 

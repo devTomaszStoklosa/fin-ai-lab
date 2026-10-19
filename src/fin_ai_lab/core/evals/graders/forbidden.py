@@ -16,8 +16,7 @@ class ForbiddenGrader:
         # check flags e.g. "kup" inside "kupna", including inside a sentence
         # that denies being a recommendation ("nie jest sugestią kupna...").
         self._patterns = [
-            (phrase, re.compile(rf"\b{re.escape(phrase)}\b", re.IGNORECASE))
-            for phrase in phrases
+            (phrase, re.compile(rf"\b{re.escape(phrase)}\b", re.IGNORECASE)) for phrase in phrases
         ]
         self._field = spec.field
 

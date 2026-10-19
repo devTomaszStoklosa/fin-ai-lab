@@ -8,8 +8,11 @@ from fin_ai_lab.market_pulse.notifications.ntfy import send_alerts
 
 def _alert(series_id: str = "DGS10") -> Alert:
     return Alert(
-        series_id=series_id, previous_value=Decimal("4.5"), new_value=Decimal("4.7"),
-        threshold=Decimal("0.1"), message=f"{series_id} zmiana",
+        series_id=series_id,
+        previous_value=Decimal("4.5"),
+        new_value=Decimal("4.7"),
+        threshold=Decimal("0.1"),
+        message=f"{series_id} zmiana",
     )
 
 

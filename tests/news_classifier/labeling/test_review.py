@@ -39,17 +39,13 @@ def test_export_for_review_writes_no_teacher_columns(tmp_path: Path) -> None:
 
 
 def test_export_for_review_samples_deterministically(tmp_path: Path) -> None:
-    corpus = [
-        _labeled(f"Nagłówek {i}", "neutral", "inne", []) for i in range(20)
-    ]
+    corpus = [_labeled(f"Nagłówek {i}", "neutral", "inne", []) for i in range(20)]
     output = tmp_path / "review.csv"
 
     first = export_for_review(corpus, output, sample_size=5)
     second = export_for_review(corpus, output, sample_size=5)
 
-    assert [item.headline.headline for item in first] == [
-        item.headline.headline for item in second
-    ]
+    assert [item.headline.headline for item in first] == [item.headline.headline for item in second]
     assert len(first) == 5
 
 

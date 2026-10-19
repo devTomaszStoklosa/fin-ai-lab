@@ -89,9 +89,7 @@ def _fixture(name: str) -> tuple[MetricsJson, dict[str, InstrumentMetadata]]:
         )
         metadata = {
             "0": InstrumentMetadata(name="Tesla Inc", category="Consumer", currency="PLN"),
-            "1": InstrumentMetadata(
-                name="US Treasury Bond 20+yr", category="bond", currency="PLN"
-            ),
+            "1": InstrumentMetadata(name="US Treasury Bond 20+yr", category="bond", currency="PLN"),
         }
         allocation_by_category = {"Consumer": Decimal("0.9"), "bond": Decimal("0.1")}
 

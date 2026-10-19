@@ -28,8 +28,8 @@ class ParserConfig(BaseModel):
     sheet_name: str | None = None
     header_row: int = 1
     row_filter: RowFilter | None = None
-    expected_headers: list[str]                # full header row, used for signature matching
-    column_mapping: dict[str, str]             # subset actually mapped: file header -> field
+    expected_headers: list[str]  # full header row, used for signature matching
+    column_mapping: dict[str, str]  # subset actually mapped: file header -> field
     number_format: Literal["pl", "en"] = "en"
     date_format: str = "%Y-%m-%d"
     encoding: str = "utf-8"

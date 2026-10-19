@@ -20,10 +20,18 @@ _HORIZON_RE = re.compile(
     re.IGNORECASE,
 )
 _UNIT_DAYS = {
-    "day": 1, "dzień": 1, "dni": 1,
-    "week": 7, "tydzień": 7, "tygodni": 7,
-    "month": 30, "miesiąc": 30, "miesięcy": 30,
-    "year": 365, "rok": 365, "lat": 365,
+    "day": 1,
+    "dzień": 1,
+    "dni": 1,
+    "week": 7,
+    "tydzień": 7,
+    "tygodni": 7,
+    "month": 30,
+    "miesiąc": 30,
+    "miesięcy": 30,
+    "year": 365,
+    "rok": 365,
+    "lat": 365,
 }
 
 
