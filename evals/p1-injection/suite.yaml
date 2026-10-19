@@ -1,0 +1,8 @@
+name: p1-injection
+dataset_version: 1
+target: fin_ai_lab.portfolio_xray.injection_target:target
+graders:
+  - type: exact
+    field: flagged
+repeats: 1
+concurrency: 4

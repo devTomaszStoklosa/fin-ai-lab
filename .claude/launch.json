@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "portfolio-webapp-backend",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "fin-ai-lab", "web"],
+      "port": 8010
+    },
+    {
+      "name": "portfolio-webapp-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "port": 5173
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+[project]
+name = "fin-ai-lab"
+version = "0.1.0"
+description = "Laboratorium nauki AI engineeringu na danych z rynków finansowych"
+readme = "README.md"
+authors = [
+    { name = "Tomasz", email = "tomaszstoklosa1990@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=2.23.0",
+    "httpx>=0.28.1",
+    "openpyxl>=3.1.5",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+    "typer>=0.27.2",
+]
+
+[project.optional-dependencies]
+# numpy/pandas are the first real native-dependency risk on this CPU
+# (no AVX2) — see tests/test_environment.py and docs/ENVIRONMENT.md.
+portfolio = ["numpy>=2.0", "pandas>=2.2", "yfinance>=0.2.66"]
+# pypdf is pure Python (no native extension) — no AVX2 risk, unlike numpy.
+# numpy already verified on this CPU in P1-S4 (see docs/ENVIRONMENT.md);
+# needed here too for in-memory cosine similarity (03-design.md).
+rag = [
+    "pypdf>=5.0.0",
+    "numpy>=2.0",
+    # bm25s is pure Python (no native extension) — no AVX2 risk. Verified
+    # on this CPU 2026-09-17 (docs/ENVIRONMENT.md). Keyword-match half of
+    # hybrid search (03-design.md P2-S3), alongside the existing embeddings.
+    "bm25s>=0.3.11",
+]
+# mcp is pure Python (no native extension). yfinance is duplicated from
+# "portfolio" on purpose: pulse must be installable standalone (P3-S3,
+# WIG20-only-via-MCP tool), without pulling in the rest of portfolio's deps.
+pulse = ["mcp>=1.2.0", "yfinance>=0.2.66"]
+# scikit-learn on this CPU (no AVX2) is unverified — test-import first
+# (docs/ENVIRONMENT.md, 03-design.md P4-S3 risk), don't assume it just
+# works like numpy/pandas/bm25s/yfinance did.
+ml = ["numpy>=2.0", "scikit-learn>=1.5"]
+# Groq second LLM provider (ADR 0007) — pure-Python HTTP client (OpenAI-
+# compatible REST), no native extension, no AVX2 risk (same reasoning as
+# "mcp" above).
+groq = ["groq>=1.7.0"]
+# torch (CPU) verified on this machine 2026-09-19 (docs/ENVIRONMENT.md) —
+# no AVX2 issue. Local inference of the P4-S4 HerBERT checkpoints for the
+# P4-S7 comparison report (REQ-021: latency/cost measured on the real
+# target hardware, not assumed from Colab GPU).
+herbert = ["torch>=2.14", "transformers>=5.0"]
+# llama-cpp-python verified on this machine 2026-09-19 (docs/ENVIRONMENT.md)
+# — no wheel for this platform, builds from source (~12 min), then runs
+# fine with no AVX2 issue. peft is for the one-time LoRA-merge step in
+# scripts/news_classifier_quantize_bielik.py, not the runtime classifier.
+quantized = ["llama-cpp-python>=0.3", "peft>=0.13", "transformers>=5.0"]
+# duckdb ships prebuilt wheels (no local compile like llama-cpp-python) but
+# is still a native extension -- test-import first (tests/test_environment.py)
+# before betting portfolio-webapp's persistence on it, same discipline as
+# every other native dependency above. fastapi/uvicorn/python-multipart are
+# pure Python; python-multipart is FastAPI's required (not bundled) dependency
+# for File()/Form() request parsing (portfolio-webapp-S2 file upload).
+ui = ["fastapi>=0.120.0", "uvicorn[standard]>=0.38.0", "duckdb>=1.4.0", "python-multipart>=0.0.20"]
+
+[project.scripts]
+fin-ai-lab = "fin_ai_lab.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-m 'not live'"
+# Without this, a locally cloned tools/llama.cpp (P4-S6's conversion
+# script prerequisite, gitignored) gets walked too -- its own test suite
+# has dependencies this project never installs.
+testpaths = ["tests"]
+markers = [
+    "live: requires network access and a real API key (GEMINI_API_KEY/GROQ_API_KEY), skipped by default",
+]

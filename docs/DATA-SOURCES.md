@@ -1,0 +1,69 @@
+# Źródła danych
+
+Werdykty licencyjne dla źródeł wspólnych z Analizoteką pochodzą z jej planu danych (`C:\Users\Tomasz\Desktop\Repo\InvestorSocial\DATA-SOURCES-PLAN.md`, zweryfikowane na żywo 2026-07-31). Przed użyciem produkcyjnym sprawdź je ponownie.
+
+## Zasady
+
+1. **Nauka ≠ produkt.** Kolumna „Nauka" mówi, czy wolno użyć lokalnie w tym repo. Kolumna „Produkt" — czy wynik może trafić do Analizoteki lub być publikowany.
+2. **Throttling po naszej stronie**, nie przez odpowiedzi 429. Każdy klient w `core.http` ma minimalny odstęp między żądaniami.
+3. **Cache na dysku** (`data/cache/`) — tych samych danych nie pobieramy dwa razy.
+4. **Atrybucja** idzie razem z danymi (źródło + URL w metadanych).
+5. **Żadnego scrapowania** stron chronionych antybotem ani treści za paywallem.
+6. **Dane osobowe** (eksporty z brokerów): tylko `data/private/`; przed wysłaniem do API usuń imiona, numery rachunków i inne identyfikatory.
+
+## Źródła
+
+| Źródło | Co daje | Klucz | Limit | Nauka | Produkt | Projekty |
+|---|---|---|---|---|---|---|
+| SEC EDGAR (`data.sec.gov`, `sec.gov/Archives`) | listy zgłoszeń, 10-K/10-Q/8-K, XBRL `companyfacts`, `frames`, mapa `company_tickers.json` | nie, ale **wymagany `User-Agent` z kontaktem** (bez niego 403) | 10 req/s | tak | tak (domena publiczna USA) | P2, P5 |
+| FRED (`api.stlouisfed.org`) | makro USA, rentowności, stopy | **tak** (darmowy) | 120 req/min | tak | **per seria** — patrz niżej | P3 |
+| NBP (`api.nbp.pl`) | kursy walut (tabele A/B/C), złoto | nie | brak (zachowaj umiar) | tak | tak | P1, P3 |
+| NBP stopy procentowe (`static.nbp.pl/dane/stopy/stopy_procentowe.xml`) | aktualna stopa referencyjna/lombardowa/depozytowa NBP + data obowiązywania | nie | brak (zachowaj umiar) | tak | tak | P3 |
+| GUS BDL (`bdl.stat.gov.pl`) | statystyki PL | opcjonalny | 5/s anonimowo, 10/s z kluczem | tak | tak, **CC BY 4.0** (atrybucja) | P3 |
+| GDELT (feed plików) | artykuły, ton medialny | nie | brak | tak | tak (jawnie dozwolone) | P3, P4 |
+| GDELT DOC 2.0 API | wyszukiwanie artykułów | nie | **1 req / 5 s, ryzyko bana IP** | tylko ad-hoc | nie w automatach | P3 |
+| RSS Bankier (`bankier.pl/rss/wiadomosci.xml`, `/gielda.xml`) | nagłówki i leady newsów PL | nie | brak | tak, lokalny korpus | tylko tytuł ≤ 120 i streszczenie ≤ 150 znaków (art. 15 DSM) | P3, P4 |
+| RSS Strefa Inwestorów (`strefainwestorow.pl/rss.xml`) | newsy PL; `description` ≈ cały artykuł | nie | brak | tak, lokalny korpus | jak wyżej — przycinanie krytyczne | P3, P4 |
+| RSS Comparic (`comparic.pl/feed/`) | newsy PL (giełda, waluty, krypto) | nie | brak | tak, lokalny korpus (ASSUMPTION — regulamin serwisu nie znaleziony na 2026-09-18, brak jawnego zakazu jak przy Money.pl, ale też brak jawnej zgody; potraktowany jak Bankier/Strefa: krótki cytat prasowy, tylko przycięty tytuł/lead) | jak wyżej — przycinanie krytyczne, zweryfikuj regulamin przed produktem | P4 |
+| OpenFIGI | ISIN → FIGI, ticker, giełda, typ instrumentu | opcjonalny (wyższe limity) | bez klucza: 25 req/min, 10 zadań/request; z kluczem: 25 req/6s, 100 zadań/request (zweryfikowane 2026-09-16, `api.openfigi.com/api/documentation`) | tak | sprawdź warunki | P1 |
+| yfinance (Yahoo) | historyczne ceny; dywidendy na akcję po dniu ustalenia prawa, w jednostce notowania (pensy dla `GBp`) — szacunek dywidend portfolio-webapp (#266); GPW z sufiksem `.WA`. WIG20 = ticker `WIG20.WA` (zweryfikowane na żywo 2026-09-17), wyłącznie przez narzędzie MCP P3-S3, nigdy w automatycznym briefie. Benchmarki portfolio-webapp (#273): ceny skorygowane o dywidendy (`Adj Close`); indeksy GPW (`WIG20.WA`, `WIG.WA`, `MWIG40.WA`) i `^XNDX` mają tylko dzisiejszy kurs, bez historii (sprawdzone 2026-10-13) — zamiast nich fundusze `ETFBW20TR.WA`, `ETFBM40TR.WA` i `QQQ`; `^SP500TR`, `^GDAXI`, `IWDA.AS`, `GC=F` mają pełną historię | nie | nieoficjalne, bywa blokowane | **tylko lokalnie** | **nie** | P1, P3, P5, portfolio-webapp |
+| KRS / eKRS | roczne sprawozdania finansowe spółek PL (z opóźnieniem) | nie | brak | tak | tak (informacja publiczna) | P2 (opcjonalnie) |
+| Raporty okresowe spółek GPW (PDF z relacji inwestorskich) | sprawozdania PL | nie | pobieranie ręczne, kilka plików | tak | sprawdź licencję | P2 |
+| FinanceBench (Patronus AI) | otwarta próbka ok. 150 pytań do raportów spółek US | nie | — | tak | sprawdź licencję | P2 |
+| FinancialPhraseBank | zdania finansowe EN z sentymentem | nie | — | tak | **nie** (CC BY-NC-SA 3.0) | P4 |
+| FiQA | sentyment i QA finansowe EN | nie | — | tak | sprawdź licencję | P4 |
+| HerBERT (`allegro/herbert-base-cased`) | encoder PL do fine-tuningu (P4-S4) | nie | — | tak | **CC BY 4.0** (zweryfikowane na kartach modelu HF, 2026-09-19) | P4 |
+| `speakleash/Bielik-1.5B-v3.0-Instruct` | model bazowy do fine-tuningu LoRA/QLoRA (P4-S5) | nie | — | tak | **Apache 2.0** (zweryfikowane na karcie modelu HF, 2026-09-19) — dozwolone użycie komercyjne i redystrybucja dostrojonych wersji | P4 |
+
+### FRED — licencja per seria
+
+Serie Fed, BLS i BEA są domeną publiczną (np. `DGS10`, `DGS2`, `T10Y2Y`, `DFF`, `CPIAUCSL`, `UNRATE`). Serie podmiotów trzecich (S&P, ICE BofA, Moody's, CBOE — np. `VIXCLS`) nie nadają się do redystrybucji: tylko nauka. Informacja o prawach siedzi w polu `notes` serii, więc repo trzyma ręcznie zweryfikowaną allowlistę serii, a nie przyjmuje dowolnych ID.
+
+### SEC — pułapki danych
+
+- `companyfacts` dużej spółki ma 10–20 MB — pobieraj na żądanie, z cache.
+- Ta sama pozycja występuje pod różnymi tagami (`Revenues`, `RevenueFromContractWithCustomerExcludingAssessedTax`, `SalesRevenueNet`) zależnie od roku i spółki. Potrzebna mapa „grupa tagów → jedno pojęcie" z priorytetem; bez niej szereg przychodów urywa się przy zmianie standardu (ASC 606, 2018).
+- Ten sam okres pojawia się w kilku zgłoszeniach; obowiązuje obserwacja z najnowszą datą złożenia.
+- Ta sama wartość bywa raportowana w kilku jednostkach — filtruj po jednostce.
+
+### GDELT i sentyment PL
+
+Ton dla polskich artykułów GDELT liczy na tłumaczeniu maszynowym, więc sygnał jest zaszumiony. To jest motywacja projektu P4, nie gotowy „nastrój rynku".
+
+## Wykluczone
+
+| Źródło | Powód |
+|---|---|
+| Google News RSS | jawny zakaz użycia poza osobistym czytnikiem |
+| Money.pl (RSS i treść) | regulamin wymaga uprzedniej, wyraźnej zgody Wirtualnej Polski na jakiekolwiek pobieranie/kopiowanie treści, także zautomatyzowane — sprawdzone 2026-09-18 |
+| PAP Biznes | ochrona Imperva + licencjonowana treść |
+| Dane rynkowe i komunikaty GPW | wymagają płatnej licencji na dane rynkowe |
+| ESPI/EBI przez Bankier | dane dostarcza Notoria — cudza licencja; feed `komunikaty.xml` jest martwy |
+
+## Nowe źródło — checklista
+
+1. Warunki użycia: nauka / produkt, atrybucja, zakaz redystrybucji.
+2. Limity i wymagane nagłówki.
+3. Wpis w tabeli powyżej (przez commit, z datą weryfikacji).
+4. Klient w `core.http` z throttlingiem i cache.
+5. Test bez sieci na nagranej odpowiedzi.

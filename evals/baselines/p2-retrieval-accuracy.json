@@ -1,0 +1,33 @@
+{
+  "suite": "p2-retrieval-accuracy",
+  "dataset_version": 1,
+  "started_at": "2026-09-17T07:36:02.694115Z",
+  "finished_at": "2026-09-17T07:36:12.248125Z",
+  "incomplete": false,
+  "model": null,
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "06a94e4",
+  "cost_usd": "0",
+  "case_count": 4,
+  "cache_hits": 0,
+  "latency_p50_ms": 624.5,
+  "latency_p95_ms": 6645.249999999997,
+  "metrics": {
+    "grader:exact": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 4.0
+    },
+    "tag:in-corpus": {
+      "pass_rate": 1.0,
+      "n": 4.0
+    }
+  },
+  "cases": {
+    "microsoft-ai-risk": true,
+    "amazon-seasonal-risk": true,
+    "oracle-cloud-risk": true,
+    "nextera-weather-risk": true
+  }
+}

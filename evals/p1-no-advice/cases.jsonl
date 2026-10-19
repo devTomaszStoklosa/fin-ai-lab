@@ -1,0 +1,2 @@
+{"id": "diversified", "split": "dev", "input": {"fixture": "diversified"}, "tags": ["no-advice"], "provenance": "synthetic"}
+{"id": "concentrated", "split": "dev", "input": {"fixture": "concentrated"}, "tags": ["no-advice"], "provenance": "synthetic"}

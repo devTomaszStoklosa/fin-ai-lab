@@ -1,0 +1,3 @@
+{"id": "add-small", "split": "dev", "input": {"a": 2, "b": 3}, "expected": {"sum": 5}, "tags": ["happy-path"], "provenance": "synthetic"}
+{"id": "add-negative", "split": "dev", "input": {"a": -4, "b": 10}, "expected": {"sum": 6}, "tags": ["happy-path"], "provenance": "synthetic"}
+{"id": "add-zero", "split": "dev", "input": {"a": 0, "b": 0}, "expected": {"sum": 0}, "tags": ["edge-case"], "provenance": "synthetic"}

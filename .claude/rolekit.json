@@ -1,0 +1,12 @@
+{
+  "specsDir": "docs/specs",
+  "enforcement": "ask",
+  "reminder": true,
+  "defaultRole": null,
+  "gates": {
+    "dev": "uv run ruff check . && uv run pytest -q",
+    "qa": "uv run pytest -q"
+  },
+  "gateTimeoutSec": 600,
+  "gateMaxBlocks": 3
+}

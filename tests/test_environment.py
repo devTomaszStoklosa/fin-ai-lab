@@ -1,0 +1,77 @@
+from collections.abc import Callable
+
+import pytest
+
+
+def _check_pydantic_core() -> None:
+    from pydantic import BaseModel
+
+    class Probe(BaseModel):
+        value: int
+
+    assert Probe.model_validate({"value": "42"}).value == 42
+
+
+# Each entry: (dependency name, callable that imports it and performs one operation).
+# Populated as slices add native dependencies (see docs/ENVIRONMENT.md).
+NATIVE_DEPENDENCY_CHECKS: list[tuple[str, Callable[[], None]]] = [
+    ("pydantic-core", _check_pydantic_core),
+]
+
+
+def test_native_dependencies_work_on_this_cpu() -> None:
+    for _name, check in NATIVE_DEPENDENCY_CHECKS:
+        check()
+
+
+def test_numpy_works_on_this_cpu_when_installed() -> None:
+    # numpy/pandas/yfinance are the optional "portfolio" extra (P1's risk metrics),
+    # not a base dependency — skip rather than fail when it's not synced.
+    numpy = pytest.importorskip("numpy")
+
+    assert numpy.array([1.0, 2.0, 3.0]).sum() == 6.0
+
+
+def test_pandas_works_on_this_cpu_when_installed() -> None:
+    pandas = pytest.importorskip("pandas")
+
+    frame = pandas.DataFrame({"a": [1, 2, 3]})
+
+    assert frame["a"].sum() == 6
+
+
+def test_bm25s_works_on_this_cpu_when_installed() -> None:
+    bm25s = pytest.importorskip("bm25s")
+
+    corpus = ["the cat sat on the mat", "dogs are great pets", "the mat was red"]
+    retriever = bm25s.BM25()
+    retriever.index(bm25s.tokenize(corpus))
+    results, _scores = retriever.retrieve(bm25s.tokenize(["red mat"]), k=1)
+
+    assert corpus[results[0][0]] == "the mat was red"
+
+
+def test_scikit_learn_works_on_this_cpu_when_installed() -> None:
+    # "ml" extra (P4-S3 baselines) — verified live on this CPU (no AVX2)
+    # 2026-09-18 before building anything on it (03-design.md risk).
+    pytest.importorskip("sklearn")
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+
+    features = TfidfVectorizer().fit_transform(["dobry wynik finansowy", "zly wynik finansowy"])
+    model = LogisticRegression().fit(features, ["positive", "negative"])
+
+    assert list(model.predict(features)) == ["positive", "negative"]
+
+
+def test_duckdb_works_on_this_cpu_when_installed() -> None:
+    # "ui" extra (portfolio-webapp-S1) — ships prebuilt wheels (unlike
+    # llama-cpp-python) but is still a native extension, so still gets the
+    # same import-and-one-operation check as everything else here.
+    duckdb = pytest.importorskip("duckdb")
+
+    connection = duckdb.connect(":memory:")
+    connection.execute("CREATE TABLE probe (id INTEGER, name TEXT)")
+    connection.execute("INSERT INTO probe VALUES (1, 'a'), (2, 'b')")
+
+    assert connection.execute("SELECT count(*) FROM probe").fetchone() == (2,)

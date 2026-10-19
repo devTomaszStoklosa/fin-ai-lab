@@ -1,0 +1,240 @@
+import csv
+import hashlib
+import json
+from datetime import date, datetime
+from decimal import Decimal
+from io import StringIO
+from typing import Literal
+
+from pydantic import BaseModel
+
+from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
+from fin_ai_lab.portfolio_xray.metrics.fx import FxRateNotFoundError, NbpFxClient
+from fin_ai_lab.portfolio_xray.metrics.price_history import fetch_price_history, to_yahoo_ticker
+
+# Bossa's own encoding/delimiter for this export (confirmed against the real
+# file: bytes 0x9C/0xE6 decode as "ś"/"ć" only under cp1250, and the header
+# is unparseable as UTF-8). Bossa has exactly one known export shape today,
+# so this is a dedicated reader, not a generic configurable one like P1-S2's
+# ParserConfig — that abstraction is for row-shaped exports (1 row = 1
+# position); this file is transaction-shaped and needs aggregation instead.
+_ENCODING = "cp1250"
+_DELIMITER = ";"
+_SIDE_MAP = {"K": "buy", "S": "sell"}
+
+# Yahoo quotes some London listings in pence. NBP has no pence rate, and its
+# lookup ignores letter case ("GBp" would fetch the pound's rate), so a pence
+# close is turned into pounds first -- same shapes as portfolio_webapp's
+# dividend_forecast._MINOR_UNITS.
+_MINOR_UNITS = {"GBp": ("GBP", Decimal(100)), "GBX": ("GBP", Decimal(100))}
+
+
+class BossaTransaction(BaseModel):
+    executed_at: datetime
+    instrument_name: str
+    isin: str
+    side: Literal["buy", "sell"]
+    quantity: Decimal
+    price: Decimal
+    value: Decimal
+    commission: Decimal
+    net_value: Decimal
+    currency: str
+
+
+def parse_bossa_csv(file_bytes: bytes) -> list[BossaTransaction]:
+    text = file_bytes.decode(_ENCODING)
+    reader = csv.DictReader(StringIO(text), delimiter=_DELIMITER)
+
+    transactions = []
+    for row_number, row in enumerate(reader, start=2):
+        side = _SIDE_MAP.get(row["-"])
+        if side is None:
+            raise ValueError(f"Unknown transaction side '{row['-']}' in row {row_number}")
+        transactions.append(
+            BossaTransaction(
+                executed_at=datetime.strptime(row["data"], "%d.%m.%Y %H:%M:%S"),
+                instrument_name=row["papier"],
+                isin=row["isin"],
+                side=side,
+                quantity=_parse_pl_decimal(row["ilość"]),
+                price=_parse_pl_decimal(row["cena"]),
+                value=_parse_pl_decimal(row["wartość"]),
+                commission=_parse_pl_decimal(row["prowizja"]),
+                net_value=_parse_pl_decimal(row["po prowizji"]),
+                currency=row["waluta"],
+            )
+        )
+    return transactions
+
+
+def transactions_to_positions(
+    transactions: list[BossaTransaction],
+    *,
+    account_type: AccountType,
+    valuation_date: date,
+) -> tuple[list[Position], list[str]]:
+    """Deterministic replay, never a merge of two already-computed states
+    (02-spec.md REQ-021): quantity is a running sum signed by side, average
+    cost is a running weighted average of the buy legs (net of commission),
+    reduced proportionally on each sell. Positions closed to zero are
+    dropped; a position that would go negative means a sell the imported
+    history has no matching buy for — most likely a gap before the earliest
+    imported transaction (the one thing this function can actually detect;
+    an overlap or a gap that never causes an oversell stays invisible here).
+    """
+    by_isin: dict[str, list[BossaTransaction]] = {}
+    for transaction in transactions:
+        by_isin.setdefault(transaction.isin, []).append(transaction)
+
+    positions: list[Position] = []
+    errors: list[str] = []
+    for isin, isin_transactions in by_isin.items():
+        ordered = sorted(isin_transactions, key=lambda t: t.executed_at)
+        quantity = Decimal(0)
+        cost_basis = Decimal(0)
+        for transaction in ordered:
+            if transaction.side == "buy":
+                quantity += transaction.quantity
+                cost_basis += transaction.net_value
+            else:
+                if quantity > 0:
+                    cost_basis -= (cost_basis / quantity) * transaction.quantity
+                quantity -= transaction.quantity
+
+        if quantity == 0:
+            continue
+        if quantity < 0:
+            errors.append(
+                f"Position in {isin} went negative — likely a gap in transaction "
+                "history before the earliest imported transaction"
+            )
+            continue
+
+        latest = ordered[-1]
+        positions.append(
+            Position(
+                broker="bossa",
+                account_type=account_type,
+                instrument_name=latest.instrument_name,
+                isin=isin,
+                symbol=None,
+                # ASSUMPTION: Bossa's transaction history has no instrument-type
+                # column (unlike XTB's "Category"), so asset class can't be
+                # derived from the file the way importer.py does for XTB.
+                # "other" is the same safe fallback importer.py uses for any
+                # XTB category it doesn't recognize.
+                asset_class="other",
+                quantity=quantity,
+                avg_cost=cost_basis / quantity,
+                cost_currency=latest.currency,
+                market_value=None,
+                market_currency=None,
+                valuation_date=valuation_date,
+            )
+        )
+    return positions, errors
+
+
+async def attach_current_market_values(
+    positions: list[Position], fx_client: NbpFxClient | None = None
+) -> list[Position]:
+    """Bossa's ledger only carries historical execution prices, never a
+    current value — unlike XTB, whose export states market_value directly.
+    Best-effort only: a position without a resolved ticker, or without price
+    history, keeps market_value=None rather than guessing.
+
+    Yahoo's close is in the listing's own quote currency (SolarEdge: USD),
+    while the value is stored in the currency the cost was recorded in
+    (Bossa: PLN), so the close is converted at the NBP mid rate of its own
+    day (issue #279). An unknown quote currency, or one that can't be
+    converted, also keeps market_value=None -- a foreign price must never
+    be stored as if it were the cost currency."""
+    updated = []
+    for position in positions:
+        # OpenFIGI's own ticker ("1AT") isn't Yahoo's symbol for the same
+        # listing ("1AT.WA") -- translate it the same way service.py's
+        # quote_currency fetch and the XTB live-refresh path already do
+        # (issue #208). position.symbol is XTB's own broker symbol, which
+        # Yahoo doesn't know either ("GOOGL.US", issue #250), but it is
+        # never set on a Bossa position, so the fallback below stays unused.
+        if position.ticker is not None:
+            ticker = to_yahoo_ticker(position.ticker, position.exchange_code)
+        else:
+            ticker = position.symbol
+        history = fetch_price_history(ticker) if ticker else None
+        if history is not None:
+            # The most recent trading day can come back as NaN before Yahoo
+            # finalizes it -- drop it rather than silently write
+            # market_value = NaN * quantity (issue #193, same class of bug
+            # already fixed for price_change_ratio in #192).
+            history = history.dropna()
+        if history is None or history.empty:
+            updated.append(position)
+            continue
+        latest_price = await _close_in_cost_currency(
+            Decimal(str(history.iloc[-1])), position, history.index[-1].date(), fx_client
+        )
+        if latest_price is None:
+            updated.append(position)
+            continue
+        updated.append(
+            position.model_copy(
+                update={
+                    "market_value": latest_price * position.quantity,
+                    "market_currency": position.cost_currency,
+                }
+            )
+        )
+    return updated
+
+
+async def _close_in_cost_currency(
+    close: Decimal, position: Position, close_date: date, fx_client: NbpFxClient | None
+) -> Decimal | None:
+    """One unit's close in the position's cost currency: as-is when the
+    listing trades in that currency, otherwise through both currencies' NBP
+    mid rates on the close's own day (PLN is 1). None when it can't be
+    known."""
+    if position.quote_currency is None or position.cost_currency is None:
+        return None
+    currency, divisor = _MINOR_UNITS.get(
+        position.quote_currency, (position.quote_currency, Decimal(1))
+    )
+    price = close / divisor
+    if currency == position.cost_currency:
+        return price
+    if fx_client is None:
+        return None
+    try:
+        quote_rate = await fx_client.mid_rate(currency, close_date)
+        cost_rate = await fx_client.mid_rate(position.cost_currency, close_date)
+    except FxRateNotFoundError:
+        return None
+    return price * quote_rate / cost_rate
+
+
+def dedup_key(transaction: BossaTransaction) -> str:
+    """Stable identity for one transaction row, for a caller that persists
+    transactions across multiple imports over time (portfolio-webapp's
+    02-spec.md REQ-021) and needs to ignore rows it has already seen. Bossa's
+    export has no transaction ID column, so the key is a hash of the full
+    row — P1 itself has no persistence layer and does not use this."""
+    canonical = json.dumps(transaction.model_dump(mode="json"), sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def date_range(transactions: list[BossaTransaction]) -> tuple[date, date] | None:
+    """Min/max transaction date in one imported file — for a caller to show
+    the owner, so they can check for gaps against a previous import
+    (portfolio-webapp's 02-spec.md REQ-022). Code cannot detect a gap by
+    itself; this only gives a human something to check."""
+    if not transactions:
+        return None
+    dates = [t.executed_at.date() for t in transactions]
+    return min(dates), max(dates)
+
+
+def _parse_pl_decimal(text: str) -> Decimal:
+    cleaned = text.strip().replace("\xa0", "").replace(" ", "").replace(",", ".")
+    return Decimal(cleaned)

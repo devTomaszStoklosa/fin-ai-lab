@@ -1,0 +1,144 @@
+from typing import Literal
+
+from pydantic import BaseModel
+
+from fin_ai_lab.core.http.client import ThrottledHttpClient
+
+OPENFIGI_BASE_URL = "https://api.openfigi.com"
+# Verified 2026-09-16 against api.openfigi.com/api/documentation:
+# 25 requests/minute without an API key (this repo has none configured),
+# 10 jobs per request. See docs/DATA-SOURCES.md.
+DEFAULT_MIN_INTERVAL_S = 60 / 25
+MAX_JOBS_PER_REQUEST = 10
+
+IdentificationStatus = Literal["resolved", "ambiguous", "unresolved"]
+
+
+class Listing(BaseModel):
+    """One listing OpenFIGI knows for an identifier: the same instrument on
+    one exchange, in one currency."""
+
+    figi: str | None = None
+    ticker: str | None = None
+    exchange_code: str | None = None
+    security_type: str | None = None
+
+
+class Identification(BaseModel):
+    status: IdentificationStatus
+    figi: str | None = None
+    ticker: str | None = None
+    exchange_code: str | None = None
+    security_type: str | None = None
+    identification_rule: str | None = None
+
+
+class OpenFigiClient:
+    def __init__(
+        self, http_client: ThrottledHttpClient | None = None, api_key: str | None = None
+    ) -> None:
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["X-OPENFIGI-APIKEY"] = api_key
+        self._http_client = http_client or ThrottledHttpClient(
+            OPENFIGI_BASE_URL,
+            min_interval_s=DEFAULT_MIN_INTERVAL_S,
+            provider="openfigi",
+            default_headers=headers,
+        )
+
+    async def resolve_by_isin(
+        self, isin: str, currency: str | None = None, broker_market: str | None = None
+    ) -> Identification:
+        # OpenFIGI filters listings by currency server-side when given one;
+        # we only decide between what's left, per the "Wybór notowania" rule
+        # in 02-spec.md. currency=None is a caller-driven retry (issue #207:
+        # the broker's recorded currency doesn't always match what the
+        # instrument itself trades in) -- this method makes a single
+        # attempt either way, the retry decision belongs to the caller.
+        job: dict[str, str] = {"idType": "ID_ISIN", "idValue": isin}
+        if currency is not None:
+            job["currency"] = currency
+        response = await self._http_client.post("/v3/mapping", json_body=[job])
+        matches = response[0].get("data", [])
+
+        if not matches:
+            return Identification(status="unresolved")
+
+        if len(matches) == 1:
+            rule = (
+                "only listing in currency"
+                if currency is not None
+                else "only listing (no currency match)"
+            )
+            return _to_identification(matches[0], "resolved", rule)
+
+        if broker_market is not None:
+            broker_matches = [
+                match for match in matches if match.get("exchCode") == broker_market
+            ]
+            if len(broker_matches) == 1:
+                rule = (
+                    "broker market" if currency is not None else "broker market (no currency match)"
+                )
+                return _to_identification(broker_matches[0], "resolved", rule)
+
+        return Identification(status="ambiguous")
+
+    async def resolve_by_ticker(self, ticker: str, exch_code: str) -> Identification:
+        # Fallback for positions with no ISIN at all (e.g. XTB's "Open
+        # Positions" export -- 03-design.md's deferred "fallback po
+        # tickerze"). Unlike resolve_by_isin, ticker+exchange alone is
+        # already specific enough (verified live: "ISAC"+"LN" -> exactly one
+        # match) -- no currency filter needed.
+        job = {"idType": "TICKER", "idValue": ticker, "exchCode": exch_code}
+        response = await self._http_client.post("/v3/mapping", json_body=[job])
+        matches = response[0].get("data", [])
+
+        if not matches:
+            return Identification(status="unresolved")
+        if len(matches) == 1:
+            return _to_identification(matches[0], "resolved", "ticker and exchange")
+        return Identification(status="ambiguous")
+
+    async def listings_by_isin(self, jobs: list[tuple[str, str | None]]) -> list[list[Listing]]:
+        """Every listing of each (ISIN, currency) job, in the jobs' order --
+        the choice between them is left to the caller. Ten jobs go in one
+        request (the limit without an API key), so a whole ledger's ISINs
+        cost a handful of requests instead of one each (fin-ai-lab#277). A
+        job OpenFIGI answers with an error or no match has no listings."""
+        listings: list[list[Listing]] = []
+        for start in range(0, len(jobs), MAX_JOBS_PER_REQUEST):
+            body = []
+            for isin, currency in jobs[start : start + MAX_JOBS_PER_REQUEST]:
+                job = {"idType": "ID_ISIN", "idValue": isin}
+                if currency is not None:
+                    job["currency"] = currency
+                body.append(job)
+            response = await self._http_client.post("/v3/mapping", json_body=body)
+            listings.extend(
+                [_to_listing(match) for match in answer.get("data", [])] for answer in response
+            )
+        return listings
+
+
+def _to_listing(match: dict) -> Listing:
+    return Listing(
+        figi=match.get("figi"),
+        ticker=match.get("ticker"),
+        exchange_code=match.get("exchCode"),
+        security_type=match.get("securityType"),
+    )
+
+
+def _to_identification(
+    match: dict, status: IdentificationStatus, identification_rule: str
+) -> Identification:
+    return Identification(
+        status=status,
+        figi=match.get("figi"),
+        ticker=match.get("ticker"),
+        exchange_code=match.get("exchCode"),
+        security_type=match.get("securityType"),
+        identification_rule=identification_rule,
+    )

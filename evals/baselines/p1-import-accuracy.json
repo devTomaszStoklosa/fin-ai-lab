@@ -1,0 +1,47 @@
+{
+  "suite": "p1-import-accuracy",
+  "dataset_version": 1,
+  "started_at": "2026-09-16T09:10:00.221662Z",
+  "finished_at": "2026-09-16T09:10:00.251663Z",
+  "incomplete": false,
+  "model": null,
+  "effort": null,
+  "prompt_versions": {},
+  "git_commit": "8f32c75",
+  "cost_usd": "0",
+  "case_count": 4,
+  "cache_hits": 4,
+  "latency_p50_ms": 7.5,
+  "latency_p95_ms": 15.0,
+  "metrics": {
+    "grader:numeric": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 4.0
+    },
+    "grader:exact": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 4.0
+    },
+    "grader:schema": {
+      "pass_rate": 1.0,
+      "avg_score": 1.0,
+      "n": 4.0
+    },
+    "tag:happy-path": {
+      "pass_rate": 1.0,
+      "n": 3.0
+    },
+    "tag:edge-case": {
+      "pass_rate": 1.0,
+      "n": 1.0
+    }
+  },
+  "cases": {
+    "etf-acwi": true,
+    "etf-swig80": true,
+    "equity-atrem": true,
+    "unmapped-category-falls-back-to-other": true
+  }
+}

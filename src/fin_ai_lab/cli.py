@@ -1,0 +1,710 @@
+import asyncio
+import importlib.metadata
+import os
+import sys
+from datetime import UTC, datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import get_args
+
+import typer
+
+from fin_ai_lab.core.config import Settings
+from fin_ai_lab.core.errors import BudgetExceeded, SuiteError
+from fin_ai_lab.core.evals.runner import run_suite
+from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
+from fin_ai_lab.core.llm.embeddings import GeminiEmbeddingClient
+from fin_ai_lab.core.llm.fake import FakeLlmClient
+from fin_ai_lab.core.llm.groq_client import GroqLlmClient
+from fin_ai_lab.core.prompts.registry import PromptRegistry
+from fin_ai_lab.filings_rag.corpus import EMBEDDING_MODEL, corpus_loaders
+from fin_ai_lab.filings_rag.index.builder import build_index
+from fin_ai_lab.filings_rag.index.persist import INDEX_PATH, save_index
+from fin_ai_lab.filings_rag.ingest.sec_edgar import SecEdgarClient
+from fin_ai_lab.investment_committee.budget import BudgetGuard
+from fin_ai_lab.investment_committee.models import ComparisonReport
+from fin_ai_lab.investment_committee.qa_target import compare_committee_vs_single
+from fin_ai_lab.investment_committee.single_agent import run_single_agent
+from fin_ai_lab.investment_committee.supervisor import run_committee
+from fin_ai_lab.market_pulse.agent import ask
+from fin_ai_lab.market_pulse.alerts import check_alerts
+from fin_ai_lab.market_pulse.brief import build_brief
+from fin_ai_lab.market_pulse.indicators import fetch_indicators
+from fin_ai_lab.market_pulse.notifications.ntfy import send_alerts
+from fin_ai_lab.market_pulse.regime import classify_regime
+from fin_ai_lab.market_pulse.sources.fred import FredClient
+from fin_ai_lab.market_pulse.sources.nbp import NbpClient
+from fin_ai_lab.market_pulse.sources.news import fetch_news
+from fin_ai_lab.market_pulse.state import changes_since_previous, load_previous, save_current
+from fin_ai_lab.news_classifier.comparison_report import (
+    SUITES,
+    build_model_report,
+    render_comparison_report,
+)
+from fin_ai_lab.news_classifier.corpus_store import append_labeled, load_labeled
+from fin_ai_lab.news_classifier.ingest.news_rss import collect_headlines
+from fin_ai_lab.news_classifier.labeling.progress import (
+    dedupe_pending_by_text,
+    headline_key,
+    load_labeled_keys,
+    save_labeled_keys,
+    unlabeled,
+)
+from fin_ai_lab.news_classifier.labeling.review import (
+    DEFAULT_SAMPLE_SIZE,
+    export_for_review,
+    score_calibration,
+)
+from fin_ai_lab.news_classifier.labeling.teacher import label_with_teacher
+from fin_ai_lab.portfolio_xray.canonical import AccountType, Portfolio, Position
+from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
+from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
+from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
+from fin_ai_lab.portfolio_xray.report.builder import ReportRejectedError
+from fin_ai_lab.portfolio_xray.report.orchestrator import ReportGenerationError, generate_report
+from fin_ai_lab.portfolio_xray.service import import_file
+
+# Windows' default stdout/stderr encoding is cp1252, not UTF-8 -- garbles
+# Polish diacritics in report text even when redirected to a file (#145).
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
+PORTFOLIO_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
+SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
+REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
+FILINGS_RAG_PROMPTS_DIR = Path("src/fin_ai_lab/filings_rag/prompts")
+MARKET_PULSE_PROMPTS_DIR = Path("src/fin_ai_lab/market_pulse/prompts")
+NEWS_CLASSIFIER_PROMPTS_DIR = Path("src/fin_ai_lab/news_classifier/prompts")
+INVESTMENT_COMMITTEE_PROMPTS_DIR = Path("src/fin_ai_lab/investment_committee/prompts")
+
+app = typer.Typer()
+portfolio_app = typer.Typer()
+app.add_typer(portfolio_app, name="portfolio")
+market_pulse_app = typer.Typer()
+app.add_typer(market_pulse_app, name="market-pulse")
+news_classifier_app = typer.Typer()
+app.add_typer(news_classifier_app, name="news-classifier")
+investment_committee_app = typer.Typer()
+app.add_typer(investment_committee_app, name="investment-committee")
+filings_rag_app = typer.Typer()
+app.add_typer(filings_rag_app, name="filings-rag")
+
+PORTFOLIO_WEBAPP_DB_PATH = Path("data/private/portfolio_webapp.duckdb")
+
+EVALS_DIR = Path("evals")
+
+
+@app.command()
+def version() -> None:
+    typer.echo(importlib.metadata.version("fin-ai-lab"))
+
+
+@app.command("eval")
+def eval_command(
+    suite: str,
+    split: str = typer.Option("dev", "--split"),
+    repeats: int | None = typer.Option(None, "--repeats"),
+    no_cache: bool = typer.Option(False, "--no-cache"),
+    save_baseline: bool = typer.Option(False, "--save-baseline"),
+    yes: bool = typer.Option(False, "--yes"),
+    max_cost: str | None = typer.Option(None, "--max-cost"),
+    provider: str = typer.Option(
+        "gemini", "--provider", help="LLM provider for suites whose target calls an LLM."
+    ),
+) -> None:
+    settings = Settings()
+    llm_client = _build_llm_client(settings, provider)
+    prompts = PromptRegistry()
+    prompts.load_dir(PORTFOLIO_PROMPTS_DIR)
+    prompts.load_dir(SECTOR_PROMPTS_DIR)
+    prompts.load_dir(REPORT_PROMPTS_DIR)
+    prompts.load_dir(FILINGS_RAG_PROMPTS_DIR)
+    prompts.load_dir(MARKET_PULSE_PROMPTS_DIR)
+    prompts.load_dir(NEWS_CLASSIFIER_PROMPTS_DIR)
+    prompts.load_dir(INVESTMENT_COMMITTEE_PROMPTS_DIR)
+
+    try:
+        summary, run_dir = asyncio.run(
+            run_suite(
+                EVALS_DIR / suite,
+                split=split,
+                repeats_override=repeats,
+                use_cache=not no_cache,
+                save_baseline=save_baseline,
+                yes=yes,
+                max_cost_override=Decimal(max_cost) if max_cost else None,
+                interactive=sys.stdin.isatty(),
+                confirm_fn=typer.confirm,
+                settings=settings,
+                llm_client=llm_client,
+                prompts=prompts,
+            )
+        )
+    except (SuiteError, BudgetExceeded) as exc:
+        typer.echo(f"Aborted: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Run written to {run_dir}")
+    typer.echo(f"Cost: {summary.cost_usd} USD, incomplete: {summary.incomplete}")
+    if summary.incomplete:
+        raise typer.Exit(code=1)
+
+
+@portfolio_app.command("import")
+def import_positions(
+    file: Path,
+    valuation_date: str = typer.Option(..., "--valuation-date", help="YYYY-MM-DD"),
+    account_type: str = typer.Option("regular", "--account-type"),
+    market_currency: str = typer.Option("PLN", "--market-currency"),
+    broker: str | None = typer.Option(
+        None, "--broker", help="Required only if the file's format is not yet recognized."
+    ),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    yes: bool = typer.Option(
+        False, "--yes", help="Accept a newly proposed parser config without asking."
+    ),
+    broker_market: str | None = typer.Option(
+        None, "--broker-market", help="Exchange code to prefer when an ISIN has several listings."
+    ),
+    no_identify: bool = typer.Option(
+        False, "--no-identify", help="Skip OpenFIGI lookups for positions that have an ISIN."
+    ),
+) -> None:
+    if account_type not in get_args(AccountType):
+        typer.echo(f"Invalid account type '{account_type}'", err=True)
+        raise typer.Exit(code=1)
+
+    parsed_date = datetime.strptime(valuation_date, "%Y-%m-%d").date()
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(PORTFOLIO_PROMPTS_DIR)
+    registry = ParserRegistry()
+
+    def approve(config: ParserConfig, positions: list[Position]) -> bool:
+        return _confirm_new_config(config, positions, yes)
+
+    result = asyncio.run(
+        import_file(
+            file.read_bytes(),
+            valuation_date=parsed_date,
+            account_type=account_type,
+            market_currency=market_currency,
+            registry=registry,
+            broker_hint=broker,
+            llm_client=llm_client,
+            prompt_registry=prompt_registry,
+            model=model,
+            on_new_config_proposed=approve,
+            openfigi_client=None if no_identify else OpenFigiClient(),
+            broker_market=broker_market,
+        )
+    )
+
+    if result.errors:
+        for error in result.errors:
+            typer.echo(error, err=True)
+        raise typer.Exit(code=1)
+
+    for warning in result.warnings:
+        typer.echo(f"Warning: {warning}")
+    for position in result.positions:
+        typer.echo(
+            f"{position.symbol or position.instrument_name}: {position.quantity} "
+            f"@ {position.avg_cost} {position.market_currency} "
+            f"(value {position.market_value} {position.market_currency}, "
+            f"{position.asset_class}, {position.resolution_status})"
+        )
+    typer.echo(f"{len(result.positions)} positions imported")
+
+
+@portfolio_app.command("report")
+def report_command(
+    file: Path,
+    valuation_date: str = typer.Option(..., "--valuation-date", help="YYYY-MM-DD"),
+    account_type: str = typer.Option("regular", "--account-type"),
+    market_currency: str = typer.Option("PLN", "--market-currency"),
+    broker: str | None = typer.Option(
+        None, "--broker", help="Required only if the file's format is not yet recognized."
+    ),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    yes: bool = typer.Option(
+        False, "--yes", help="Accept a newly proposed parser config without asking."
+    ),
+    broker_market: str | None = typer.Option(
+        None, "--broker-market", help="Exchange code to prefer when an ISIN has several listings."
+    ),
+    benchmark_ticker: str | None = typer.Option(
+        None,
+        "--benchmark-ticker",
+        help="Yahoo Finance ticker for beta (REQ-031: no default benchmark is assumed).",
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write the report to this file instead of stdout."
+    ),
+) -> None:
+    if account_type not in get_args(AccountType):
+        typer.echo(f"Invalid account type '{account_type}'", err=True)
+        raise typer.Exit(code=1)
+
+    parsed_date = datetime.strptime(valuation_date, "%Y-%m-%d").date()
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(PORTFOLIO_PROMPTS_DIR)
+    prompt_registry.load_dir(SECTOR_PROMPTS_DIR)
+    prompt_registry.load_dir(REPORT_PROMPTS_DIR)
+    registry = ParserRegistry()
+
+    def approve(config: ParserConfig, positions: list[Position]) -> bool:
+        return _confirm_new_config(config, positions, yes)
+
+    try:
+        report_text = asyncio.run(
+            generate_report(
+                file.read_bytes(),
+                valuation_date=parsed_date,
+                account_type=account_type,
+                market_currency=market_currency,
+                registry=registry,
+                llm_client=llm_client,
+                prompt_registry=prompt_registry,
+                model=model,
+                broker_hint=broker,
+                on_new_config_proposed=approve,
+                openfigi_client=OpenFigiClient(),
+                broker_market=broker_market,
+                benchmark_ticker=benchmark_ticker,
+            )
+        )
+    except ReportGenerationError as exc:
+        typer.echo(f"Aborted: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except ReportRejectedError as exc:
+        typer.echo("Report rejected: numbers not faithful to the computed metrics:", err=True)
+        for mismatch in exc.mismatches:
+            typer.echo(f"  {mismatch}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if output is not None:
+        output.write_text(report_text, encoding="utf-8")
+        typer.echo(f"Report written to {output}")
+    else:
+        typer.echo(report_text)
+
+
+@market_pulse_app.command("brief")
+def market_pulse_brief(
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write the brief to this file instead of stdout."
+    ),
+) -> None:
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(MARKET_PULSE_PROMPTS_DIR)
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+
+    async def run() -> str:
+        (indicators, missing_indicator_sources), (news, missing_news_sources) = (
+            await asyncio.gather(
+                fetch_indicators(fred_client, nbp_client),
+                fetch_news(),
+            )
+        )
+        missing_sources = missing_indicator_sources + missing_news_sources
+        previous_indicators = load_previous()
+        indicators = changes_since_previous(indicators, previous_indicators)
+        regime = classify_regime(indicators)
+        brief = await build_brief(
+            indicators, regime, missing_sources, news, llm_client, prompt_registry, model
+        )
+
+        alerts = check_alerts(indicators)
+        if alerts:
+            await send_alerts(alerts, settings.require_ntfy_topic())
+
+        save_current(indicators)
+        return brief.text
+
+    text = asyncio.run(run())
+    if output is not None:
+        output.write_text(text, encoding="utf-8")
+        typer.echo(f"Brief written to {output}")
+    else:
+        typer.echo(text)
+
+
+@market_pulse_app.command("ask")
+def market_pulse_ask(
+    question: str,
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+) -> None:
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(MARKET_PULSE_PROMPTS_DIR)
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+
+    answer = asyncio.run(
+        ask(question, llm_client, prompt_registry, model, fred_client, nbp_client)
+    )
+    typer.echo(answer.text)
+
+
+@filings_rag_app.command("build-index")
+def filings_rag_build_index(
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    output: Path = typer.Option(INDEX_PATH, "--output"),
+) -> None:
+    """Builds the P2 filings index and saves it for the web app to read
+    (#253). Run it again on a later day to finish companies skipped today."""
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(FILINGS_RAG_PROMPTS_DIR)
+    sec_client = SecEdgarClient(settings.require_sec_user_agent())
+    embedding_client = GeminiEmbeddingClient(settings.require_gemini_api_key())
+
+    result = asyncio.run(
+        build_index(
+            corpus_loaders(sec_client),
+            llm_client=llm_client,
+            prompt_registry=prompt_registry,
+            model=model,
+            embedding_client=embedding_client,
+            embedding_model=EMBEDDING_MODEL,
+        )
+    )
+
+    for status in result.statuses:
+        if status.skipped_reason is None:
+            typer.echo(f"{status.company}: indexed ({status.chunk_count} chunks)")
+        else:
+            typer.echo(f"{status.company}: skipped ({status.skipped_reason})")
+
+    indexed_count = sum(1 for status in result.statuses if status.skipped_reason is None)
+    if indexed_count == 0:
+        # An all-failed run (e.g. no network) must not replace a good index
+        # from an earlier day with an empty one.
+        typer.echo("Nothing indexed, the saved index was left unchanged.", err=True)
+        raise typer.Exit(code=1)
+
+    save_index(
+        result.store, embedding_model=EMBEDDING_MODEL, built_at=datetime.now(UTC), path=output
+    )
+    typer.echo(
+        f"Index saved to {output}: {indexed_count} of {len(result.statuses)} companies, "
+        f"{len(result.store)} chunks"
+    )
+
+
+@news_classifier_app.command("label")
+def news_classifier_label(
+    max_calls: int = typer.Option(15, "--max-calls", help="Teacher calls to spend this run."),
+    model: str = typer.Option("openai/gpt-oss-120b", "--model"),
+    provider: str = typer.Option(
+        "groq",
+        "--provider",
+        help="'groq' (default, ADR 0007 — this task needs the most calls of any"
+        " project) or 'gemini' (pass --model gemini-3.6-flash to match).",
+    ),
+) -> None:
+    settings = Settings()
+    llm_client = _build_llm_client(settings, provider)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(NEWS_CLASSIFIER_PROMPTS_DIR)
+
+    async def run() -> tuple[int, list[str]]:
+        headlines = await collect_headlines()
+        # Overlapping RSS feeds (bankier's two categories) cross-post the
+        # same story -- dedupe before checking what's already labeled, so
+        # a within-run duplicate never costs a second teacher call (#121).
+        headlines = dedupe_pending_by_text(headlines)
+        already_labeled = load_labeled_keys()
+        pending = unlabeled(headlines, already_labeled)
+
+        labeled, errors = await label_with_teacher(
+            pending, llm_client, prompt_registry, model, max_calls=max_calls
+        )
+        if labeled:
+            append_labeled(labeled)
+            already_labeled.update(headline_key(item.headline) for item in labeled)
+            save_labeled_keys(already_labeled)
+        return len(labeled), errors
+
+    labeled_count, errors = asyncio.run(run())
+    typer.echo(f"Labeled {labeled_count} headlines, {len(errors)} errors")
+    for error in errors:
+        typer.echo(f"  error: {error}", err=True)
+
+
+@news_classifier_app.command("export-review")
+def news_classifier_export_review(
+    output: Path = typer.Option(
+        Path("data/review/news_classifier_review.csv"), "--output"
+    ),
+    sample_size: int = typer.Option(DEFAULT_SAMPLE_SIZE, "--sample-size"),
+) -> None:
+    corpus = load_labeled()
+    if not corpus:
+        typer.echo("Corpus is empty — run 'news-classifier label' first.", err=True)
+        raise typer.Exit(code=1)
+
+    sample = export_for_review(corpus, output, sample_size=sample_size)
+    typer.echo(f"Exported {len(sample)} headlines to {output} for blind manual review.")
+    typer.echo(
+        "Fill in human_sentiment/human_event_type/human_tickers without looking at teacher"
+        " output, then run 'news-classifier score-review'."
+    )
+
+
+@news_classifier_app.command("score-review")
+def news_classifier_score_review(
+    reviewed: Path = typer.Option(Path("data/review/news_classifier_review.csv"), "--reviewed"),
+) -> None:
+    corpus = load_labeled()
+    try:
+        report = score_calibration(corpus, reviewed)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(f"Reviewed: {report['n_reviewed']}/{report['n_exported']} exported rows")
+    typer.echo(f"sentiment kappa:   {report['sentiment_kappa']:.3f}")
+    typer.echo(f"event_type kappa:  {report['event_type_kappa']:.3f}")
+    typer.echo(f"tickers exact match: {report['tickers_exact_match_pct']:.1%}")
+    # REQ-011 / docs/EVALS.md bar.
+    if report["sentiment_kappa"] < 0.6 or report["event_type_kappa"] < 0.6:
+        typer.echo("Below 0.6 kappa bar — teacher labels/prompt need work before training on them.")
+
+
+@news_classifier_app.command("compare-report")
+def news_classifier_compare_report(
+    output: Path = typer.Option(
+        Path("docs/specs/p4-news-classifier/reports/p4-s7-comparison.md"), "--output"
+    ),
+) -> None:
+    """P4-S7 (REQ-020): reads the latest eval run for each of the four
+    p4-classifier-* suites and writes one comparison report. Run
+    'fin-ai-lab eval p4-classifier-<model> --split test' for majority,
+    tfidf, few-shot and herbert first."""
+    reports = []
+    for model in SUITES:
+        try:
+            reports.append(build_model_report(model))
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_comparison_report(reports), encoding="utf-8")
+    typer.echo(f"Wrote comparison report to {output}")
+
+
+@investment_committee_app.command("analyze")
+def investment_committee_analyze(
+    file: Path,
+    valuation_date: str = typer.Option(..., "--valuation-date", help="YYYY-MM-DD"),
+    account_type: str = typer.Option("regular", "--account-type"),
+    market_currency: str = typer.Option("PLN", "--market-currency"),
+    broker: str | None = typer.Option(
+        None, "--broker", help="Required only if the file's format is not yet recognized."
+    ),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    budget_usd: str = typer.Option("1.00", "--budget-usd"),
+    max_iterations: int = typer.Option(10, "--max-iterations"),
+    yes: bool = typer.Option(
+        False, "--yes", help="Accept a newly proposed parser config without asking."
+    ),
+    committee: bool = typer.Option(
+        False, "--committee", help="Run the P5-S2 committee instead of the S1 single agent."
+    ),
+) -> None:
+    if account_type not in get_args(AccountType):
+        typer.echo(f"Invalid account type '{account_type}'", err=True)
+        raise typer.Exit(code=1)
+
+    parsed_date = datetime.strptime(valuation_date, "%Y-%m-%d").date()
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(INVESTMENT_COMMITTEE_PROMPTS_DIR)
+    registry = ParserRegistry()
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+    budget = BudgetGuard(
+        budget_usd=Decimal(budget_usd),
+        max_iterations=max_iterations,
+        on_budget_exceeded=lambda: _confirm_budget_override(yes),
+    )
+
+    def approve(config: ParserConfig, positions: list[Position]) -> bool:
+        return _confirm_new_config(config, positions, yes)
+
+    async def run() -> str:
+        result = await import_file(
+            file.read_bytes(),
+            valuation_date=parsed_date,
+            account_type=account_type,
+            market_currency=market_currency,
+            registry=registry,
+            broker_hint=broker,
+            llm_client=llm_client,
+            prompt_registry=prompt_registry,
+            model=model,
+            on_new_config_proposed=approve,
+        )
+        if result.errors:
+            raise ReportGenerationError("; ".join(result.errors))
+
+        portfolio = Portfolio(positions=result.positions, valuation_date=parsed_date)
+        if committee:
+            report = await run_committee(
+                portfolio, str(file), fred_client, nbp_client,
+                llm_client, prompt_registry, model, budget,
+            )
+        else:
+            report = await run_single_agent(
+                portfolio, str(file), fred_client, nbp_client,
+                llm_client, prompt_registry, model, budget,
+            )
+        return report.text
+
+    try:
+        text = asyncio.run(run())
+    except ReportGenerationError as exc:
+        typer.echo(f"Aborted: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(text)
+
+
+@investment_committee_app.command("compare")
+def investment_committee_compare(
+    file: Path,
+    valuation_date: str = typer.Option(..., "--valuation-date", help="YYYY-MM-DD"),
+    account_type: str = typer.Option("regular", "--account-type"),
+    market_currency: str = typer.Option("PLN", "--market-currency"),
+    broker: str | None = typer.Option(
+        None, "--broker", help="Required only if the file's format is not yet recognized."
+    ),
+    model: str = typer.Option("gemini-3.6-flash", "--model"),
+    budget_usd: str = typer.Option("1.00", "--budget-usd"),
+    yes: bool = typer.Option(
+        False, "--yes", help="Accept a newly proposed parser config without asking."
+    ),
+) -> None:
+    """P5-S7, REQ-050: single agent vs committee on the same portfolio and
+    the same per-variant budget — quality (LLM judge), cost, latency."""
+    if account_type not in get_args(AccountType):
+        typer.echo(f"Invalid account type '{account_type}'", err=True)
+        raise typer.Exit(code=1)
+
+    parsed_date = datetime.strptime(valuation_date, "%Y-%m-%d").date()
+    settings = Settings()
+    llm_client = _build_llm_client(settings)
+    prompt_registry = PromptRegistry()
+    prompt_registry.load_dir(INVESTMENT_COMMITTEE_PROMPTS_DIR)
+    registry = ParserRegistry()
+
+    fred_client = FredClient(settings.require_fred_api_key())
+    nbp_client = NbpClient()
+
+    def approve(config: ParserConfig, positions: list[Position]) -> bool:
+        return _confirm_new_config(config, positions, yes)
+
+    async def run() -> ComparisonReport:
+        result = await import_file(
+            file.read_bytes(),
+            valuation_date=parsed_date,
+            account_type=account_type,
+            market_currency=market_currency,
+            registry=registry,
+            broker_hint=broker,
+            llm_client=llm_client,
+            prompt_registry=prompt_registry,
+            model=model,
+            on_new_config_proposed=approve,
+        )
+        if result.errors:
+            raise ReportGenerationError("; ".join(result.errors))
+
+        portfolio = Portfolio(positions=result.positions, valuation_date=parsed_date)
+        return await compare_committee_vs_single(
+            portfolio, str(file), fred_client, nbp_client,
+            llm_client, prompt_registry, model, Decimal(budget_usd),
+        )
+
+    try:
+        report = asyncio.run(run())
+    except ReportGenerationError as exc:
+        typer.echo(f"Aborted: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"Zwycięzca jakości: {report.quality_winner} — {report.quality_reason}\n\n"
+        f"single_agent: koszt {report.single_agent.cost_usd} USD, "
+        f"latencja {report.single_agent.latency_ms} ms\n"
+        f"committee:    koszt {report.committee.cost_usd} USD, "
+        f"latencja {report.committee.latency_ms} ms"
+    )
+
+
+@app.command("web")
+def web_command(
+    port: int = typer.Option(
+        int(os.environ.get("PORT", 8010)), "--port", help="Defaults to $PORT, else 8010."
+    ),
+    db_path: Path = typer.Option(PORTFOLIO_WEBAPP_DB_PATH, "--db-path"),
+) -> None:
+    # Local imports: fastapi/uvicorn/duckdb are the optional "ui" extra
+    # (portfolio-webapp-S1) -- every other CLI command must keep working
+    # without it, same reasoning as yfinance's local import in P1.
+    import uvicorn
+
+    from fin_ai_lab.portfolio_webapp.api import create_app
+
+    uvicorn.run(create_app(db_path=db_path), host="127.0.0.1", port=port)
+
+
+def _confirm_new_config(config: ParserConfig, positions: list[Position], yes: bool) -> bool:
+    typer.echo(f"New format detected. Proposed configuration for broker '{config.broker}':")
+    typer.echo(f"  sheet: {config.sheet_name}, header row: {config.header_row}")
+    for file_header, field in config.column_mapping.items():
+        typer.echo(f"  '{file_header}' -> {field}")
+    typer.echo("First rows parsed with this configuration:")
+    for position in positions[:5]:
+        typer.echo(f"  {position.symbol or position.instrument_name}: {position.quantity}")
+    if yes:
+        return True
+    return typer.confirm("Save this configuration and continue?")
+
+
+def _confirm_budget_override(yes: bool) -> bool:
+    """P5-S6, REQ-020: the committee's budget/iteration cap was hit —
+    ask before continuing rather than just stopping (01-story.md's open
+    question #3, answered: CLI prompt). `--yes` auto-approves, same as
+    `_confirm_new_config` above."""
+    if yes:
+        return True
+    return typer.confirm("Budżet komitetu przekroczony. Kontynuować mimo to?")
+
+
+def _build_llm_client(settings: Settings, provider: str = "gemini") -> LlmClient:
+    # P4 teacher labeling needs far more calls than any other project's
+    # LLM use (one call per headline, hundreds of them, vs. a handful per
+    # run elsewhere) — the reason it's the one command below that defaults
+    # to "groq" instead of "gemini" (ADR 0007). Corpus was empty when this
+    # was decided, so there's no teacher-consistency risk from mixing.
+    if provider == "groq" and settings.groq_api_key:
+        return GroqLlmClient(api_key=settings.groq_api_key)
+    if settings.gemini_api_key:
+        return GeminiLlmClient(api_key=settings.gemini_api_key)
+    return FakeLlmClient({})

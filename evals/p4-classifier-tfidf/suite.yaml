@@ -1,0 +1,11 @@
+# cases.jsonl is built locally and not committed (press headlines): scripts/news_classifier_build_eval_cases.py, docs/EVALS.md
+name: p4-classifier-tfidf
+dataset_version: 1
+target: fin_ai_lab.news_classifier.qa_target:tfidf_target
+graders:
+  - type: classification_metrics
+    field: sentiment
+  - type: classification_metrics
+    field: event_type
+repeats: 1
+concurrency: 4

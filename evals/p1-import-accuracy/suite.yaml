@@ -1,0 +1,15 @@
+name: p1-import-accuracy
+dataset_version: 1
+target: fin_ai_lab.portfolio_xray.import_target:target
+graders:
+  - type: numeric
+    field: quantity
+  - type: numeric
+    field: market_value
+  - type: exact
+    field: asset_class
+  - type: schema
+    params:
+      schema: fin_ai_lab.portfolio_xray.canonical:Position
+repeats: 1
+concurrency: 4
