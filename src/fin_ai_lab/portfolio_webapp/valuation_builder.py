@@ -32,7 +32,7 @@ from fin_ai_lab.portfolio_webapp.lot_history import (
 )
 from fin_ai_lab.portfolio_webapp.lots import XTB_BROKER
 from fin_ai_lab.portfolio_webapp.manual_valuations import ManualValuation
-from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow
+from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow, SnapshotRow
 from fin_ai_lab.portfolio_webapp.schemas import (
     AssetOut,
     CompositionChangeOut,
@@ -67,6 +67,7 @@ from fin_ai_lab.portfolio_webapp.xtb_symbols import (
     quote_currency_from_lot,
 )
 from fin_ai_lab.portfolio_webapp.yahoo_ticker import position_yahoo_ticker
+from fin_ai_lab.portfolio_xray.ledger import BossaTransaction
 
 # A chart, not an archive: five years of daily points is already ~1800 per
 # series, and yfinance/NBP history further back adds load for no reader.
@@ -144,6 +145,18 @@ class _PortfolioInputs:
     notes: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class _PortfolioResult:
+    series: PortfolioSeriesOut
+    positions: list[ValuedPositionOut]
+    changes: list[CompositionChangeOut]
+    # Day-by-day sums for the all-portfolios total and its return index.
+    values: list[Decimal]
+    prior: list[Decimal]
+    dividends: list[Decimal]
+    price_dates: list[date]
+
+
 async def build_valuation(
     connection: duckdb.DuckDBPyConnection,
     portfolio_rows: list[PortfolioRow],
@@ -181,7 +194,69 @@ async def build_valuation(
 
     start = max(min(earliest, today), today - timedelta(days=MAX_HISTORY_DAYS))
     days = day_range(start, today)
+    closes_by_ticker, fx_rates = await _fetch_market_data(
+        inputs, start, today, refresh, closes_fetcher, fx_client
+    )
+    for portfolio in inputs:
+        _resolve_quote_currencies(portfolio, fx_rates)
 
+    warnings: list[str] = [note for i in inputs for note in i.notes]
+    series_out: list[PortfolioSeriesOut] = []
+    positions_out: list[ValuedPositionOut] = []
+    changes_out: list[CompositionChangeOut] = []
+    price_dates: list[date] = []
+    totals = [Decimal(0)] * len(days)
+    prior_totals = [Decimal(0)] * len(days)
+    dividend_totals = [Decimal(0)] * len(days)
+
+    for portfolio in inputs:
+        result = _portfolio_result(
+            portfolio, days, closes_by_ticker, fx_rates, warnings, link_state, overrides
+        )
+        totals = [total + value for total, value in zip(totals, result.values, strict=True)]
+        prior_totals = [
+            total + value for total, value in zip(prior_totals, result.prior, strict=True)
+        ]
+        dividend_totals = [
+            total + value for total, value in zip(dividend_totals, result.dividends, strict=True)
+        ]
+        series_out.append(result.series)
+        positions_out.extend(result.positions)
+        changes_out.extend(result.changes)
+        price_dates.extend(result.price_dates)
+
+    positions_out.sort(key=lambda p: p.value if p.value is not None else Decimal(-1), reverse=True)
+    return ValuationOut(
+        base_currency=BASE_CURRENCY,
+        computed_at=computed_at,
+        prices_as_of=max(price_dates, default=None),
+        total_value=_money(totals[-1]),
+        dates=days,
+        totals=[_money(t) for t in totals],
+        portfolios=series_out,
+        positions=positions_out,
+        assets=assets_from_positions(positions_out),
+        changes=sorted(changes_out, key=lambda c: c.date),
+        warnings=list(dict.fromkeys(warnings)),
+        link_suggestion_count=len(suggestions_in_scope(link_state, positions_out)),
+        return_index=[
+            value.quantize(INDEX, rounding=ROUND_HALF_UP)
+            for value in return_index(totals, prior_totals, dividend_totals)
+        ],
+    )
+
+
+async def _fetch_market_data(
+    inputs: list[_PortfolioInputs],
+    start: date,
+    today: date,
+    refresh: bool,
+    closes_fetcher: DailyClosesFetcher,
+    fx_client: FxSeriesClient,
+) -> tuple[dict[str, dict[date, Decimal] | None], dict[str, dict[date, Decimal]]]:
+    """Daily closes of every market-priced instrument and the NBP rate series
+    every price, flow and pending quote needs, each fetched once for all
+    portfolios."""
     anchors = [anchor for i in inputs for anchor in i.anchors.values()]
     # First of the month, so the single-portfolio and all-portfolio views
     # (different earliest dates) mostly ask yfinance for the same window
@@ -217,119 +292,98 @@ async def build_valuation(
     )
     fx_start = fx_start.replace(day=1)
     fx_rates = await _fetch_fx(fx_client, currencies - {BASE_CURRENCY}, fx_start, today)
-    for portfolio in inputs:
-        _resolve_quote_currencies(portfolio, fx_rates)
+    return closes_by_ticker, fx_rates
 
-    warnings: list[str] = [note for i in inputs for note in i.notes]
-    series_out: list[PortfolioSeriesOut] = []
-    positions_out: list[ValuedPositionOut] = []
-    changes_out: list[CompositionChangeOut] = []
+
+def _portfolio_result(
+    portfolio: _PortfolioInputs,
+    days: list[date],
+    closes_by_ticker: dict[str, dict[date, Decimal] | None],
+    fx_rates: dict[str, dict[date, Decimal]],
+    warnings: list[str],
+    link_state: LinkState,
+    overrides: dict[str, InstrumentOverride],
+) -> _PortfolioResult:
+    """One portfolio's day-by-day series, its valued positions and its
+    composition changes. `warnings` collects what could not be valued."""
+    portfolio_id = portfolio.row[0]
+    quantities = _quantities(portfolio, days)
     price_dates: list[date] = []
-    totals = [Decimal(0)] * len(days)
-    prior_totals = [Decimal(0)] * len(days)
-    dividend_totals = [Decimal(0)] * len(days)
 
-    for portfolio in inputs:
-        portfolio_id = portfolio.row[0]
-        quantities = _quantities(portfolio, days)
+    units: dict[str, UnitValues] = {}
+    for key in quantities:
+        if not any(quantities[key]):
+            continue
+        unit = _unit_values(portfolio, key, days, closes_by_ticker, fx_rates, warnings)
+        if unit is not None:
+            units[key] = unit
+            if unit.last_price_date is not None:
+                price_dates.append(unit.last_price_date)
 
-        units: dict[str, UnitValues] = {}
-        for key in quantities:
-            if not any(quantities[key]):
-                continue
-            unit = _unit_values(portfolio, key, days, closes_by_ticker, fx_rates, warnings)
-            if unit is not None:
-                units[key] = unit
-                if unit.last_price_date is not None:
-                    price_dates.append(unit.last_price_date)
+    unit_bases = {key: unit.base for key, unit in units.items()}
+    values = value_series(quantities, unit_bases, len(days))
+    prior = prior_holdings_value_series(quantities, unit_bases, len(days))
+    dividends, _ = _flows_by_day(portfolio, portfolio.dividends, days, fx_rates, warnings)
+    deposits, deposits_before = _flows_by_day(
+        portfolio, portfolio.deposits, days, fx_rates, warnings
+    )
+    # Held without daily quotes: a constant value, so no return (#273).
+    unquoted = value_series(
+        quantities,
+        {key: unit.base for key, unit in units.items() if unit.last_price_date is None},
+        len(days),
+    )
 
-        unit_bases = {key: unit.base for key, unit in units.items()}
-        values = value_series(quantities, unit_bases, len(days))
-        prior = prior_holdings_value_series(quantities, unit_bases, len(days))
-        dividends, _ = _flows_by_day(portfolio, portfolio.dividends, days, fx_rates, warnings)
-        deposits, deposits_before = _flows_by_day(
-            portfolio, portfolio.deposits, days, fx_rates, warnings
+    portfolio_positions = [
+        _valued_position(
+            portfolio_id,
+            link_state.identities.asset_key(key),
+            row,
+            units.get(key),
+            portfolio.anchors.get(key),
+            portfolio.tickers.get(key),
+            overrides.get(key),
         )
-        # Held without daily quotes: a constant value, so no return (#273).
-        unquoted = value_series(
-            quantities,
-            {key: unit.base for key, unit in units.items() if unit.last_price_date is None},
-            len(days),
+        for key, row in portfolio.current_rows
+    ]
+    series = PortfolioSeriesOut(
+        id=portfolio_id,
+        name=portfolio.row[1],
+        broker=portfolio.row[2],
+        account_type=portfolio.row[3],
+        current_value=_money(values[-1]),
+        position_count=len(portfolio.current_rows),
+        values=[_money(v) for v in values],
+        investment=_investment(portfolio, quantities, units, fx_rates, warnings),
+        prior_holdings_values=[_money(v) for v in prior],
+        dividends_by_day={
+            day: _money(amount) for day, amount in zip(days, dividends, strict=True) if amount
+        },
+        dividends_included="dividends" not in _not_covered(portfolio),
+        unquoted_values=[_money(v) for v in unquoted],
+        history_gain=_money(captured_gain(values, prior, dividends)),
+        deposits_by_day={
+            day: _money(amount) for day, amount in zip(days, deposits, strict=True) if amount
+        },
+        deposits_before_start=_money(deposits_before),
+    )
+    changes = [
+        CompositionChangeOut(
+            date=day,
+            portfolio_id=portfolio_id,
+            instrument_name=portfolio.names.get(key, key),
+            quantity_change=delta,
         )
-        totals = [total + value for total, value in zip(totals, values, strict=True)]
-        prior_totals = [total + value for total, value in zip(prior_totals, prior, strict=True)]
-        dividend_totals = [
-            total + value for total, value in zip(dividend_totals, dividends, strict=True)
-        ]
-
-        portfolio_positions = [
-            _valued_position(
-                portfolio_id,
-                link_state.identities.asset_key(key),
-                row,
-                units.get(key),
-                portfolio.anchors.get(key),
-                portfolio.tickers.get(key),
-                overrides.get(key),
-            )
-            for key, row in portfolio.current_rows
-        ]
-        positions_out.extend(portfolio_positions)
-        series_out.append(
-            PortfolioSeriesOut(
-                id=portfolio_id,
-                name=portfolio.row[1],
-                broker=portfolio.row[2],
-                account_type=portfolio.row[3],
-                current_value=_money(values[-1]),
-                position_count=len(portfolio.current_rows),
-                values=[_money(v) for v in values],
-                investment=_investment(portfolio, quantities, units, fx_rates, warnings),
-                prior_holdings_values=[_money(v) for v in prior],
-                dividends_by_day={
-                    day: _money(amount)
-                    for day, amount in zip(days, dividends, strict=True)
-                    if amount
-                },
-                dividends_included="dividends" not in _not_covered(portfolio),
-                unquoted_values=[_money(v) for v in unquoted],
-                history_gain=_money(captured_gain(values, prior, dividends)),
-                deposits_by_day={
-                    day: _money(amount)
-                    for day, amount in zip(days, deposits, strict=True)
-                    if amount
-                },
-                deposits_before_start=_money(deposits_before),
-            )
-        )
-        changes_out.extend(
-            CompositionChangeOut(
-                date=day,
-                portfolio_id=portfolio_id,
-                instrument_name=portfolio.names.get(key, key),
-                quantity_change=delta,
-            )
-            for day, key, delta in composition_changes(quantities, days)
-        )
-
-    positions_out.sort(key=lambda p: p.value if p.value is not None else Decimal(-1), reverse=True)
-    return ValuationOut(
-        base_currency=BASE_CURRENCY,
-        computed_at=computed_at,
-        prices_as_of=max(price_dates, default=None),
-        total_value=_money(totals[-1]),
-        dates=days,
-        totals=[_money(t) for t in totals],
-        portfolios=series_out,
-        positions=positions_out,
-        assets=assets_from_positions(positions_out),
-        changes=sorted(changes_out, key=lambda c: c.date),
-        warnings=list(dict.fromkeys(warnings)),
-        link_suggestion_count=len(suggestions_in_scope(link_state, positions_out)),
-        return_index=[
-            value.quantize(INDEX, rounding=ROUND_HALF_UP)
-            for value in return_index(totals, prior_totals, dividend_totals)
-        ],
+        for day, key, delta in composition_changes(quantities, days)
+    ]
+    return _PortfolioResult(
+        series=series,
+        positions=portfolio_positions,
+        changes=changes,
+        values=values,
+        prior=prior,
+        dividends=dividends,
+        price_dates=price_dates,
     )
 
 
@@ -431,6 +485,41 @@ def _collect_inputs(
         connection, [p[0] for rows in positions_by_snapshot.values() for p in rows]
     )
 
+    _add_snapshot_holdings(
+        inputs, snapshot_rows, positions_by_snapshot, lots_by_position, earliest_dates
+    )
+    _add_latest_identities(inputs, snapshot_rows, positions_by_snapshot)
+
+    transactions = repository.list_transactions(connection, portfolio_id)
+    if transactions:
+        _add_transactions(inputs, transactions, listings, earliest_dates)
+
+    latest_rows = positions_by_snapshot[snapshot_rows[-1][0]] if snapshot_rows else []
+    inputs.current_rows = [(_key(r), r) for r in latest_rows]
+    cash_operations = repository.list_cash_operations(connection, portfolio_id)
+    _add_costs(inputs, cash_operations, snapshot_rows, latest_rows, lots_by_position)
+
+    closed_lots = [] if inputs.is_ledger else repository.list_closed_lots(connection, portfolio_id)
+    if closed_lots and snapshot_rows:
+        held_on = snapshot_rows[-1][3]
+        _add_lot_history(
+            inputs, closed_lots, latest_rows, lots_by_position, held_on, earliest_dates
+        )
+    _apply_overrides(inputs, overrides)
+    _add_manual_positions(connection, inputs, portfolio_id, earliest_dates)
+
+    inputs.earliest = min(earliest_dates, default=None)
+    return inputs
+
+
+def _add_snapshot_holdings(
+    inputs: _PortfolioInputs,
+    snapshot_rows: list[SnapshotRow],
+    positions_by_snapshot: dict[UUID, list[PositionRow]],
+    lots_by_position: dict[UUID, list[tuple[Decimal, date]]],
+    earliest_dates: list[date],
+) -> None:
+    """Quantities (and dated lots) each import held, oldest first."""
     holdings_by_date: dict[date, SnapshotHoldings] = {}
     for snapshot_row in snapshot_rows:
         quantities: dict[str, Decimal] = {}
@@ -453,6 +542,12 @@ def _collect_inputs(
         earliest_dates.extend(lot.opened_on for key_lots in lots.values() for lot in key_lots)
     inputs.snapshots = list(holdings_by_date.values())
 
+
+def _add_latest_identities(
+    inputs: _PortfolioInputs,
+    snapshot_rows: list[SnapshotRow],
+    positions_by_snapshot: dict[UUID, list[PositionRow]],
+) -> None:
     # Newest first: the most recent import holding an instrument anchors
     # its value, names it and says where to look up its price.
     for snapshot_row in reversed(snapshot_rows):
@@ -466,40 +561,52 @@ def _collect_inputs(
             if anchor is not None:
                 inputs.anchors.setdefault(key, anchor)
 
-    transactions = repository.list_transactions(connection, portfolio_id)
-    if transactions:
-        # A ledger (Bossa) states every change on its own day: exact, so it
-        # replaces the step-between-imports reading of its snapshots.
-        inputs.is_ledger = True
-        for transaction in transactions:
-            sign = Decimal(1) if transaction.side == "buy" else Decimal(-1)
-            inputs.changes.append(
-                QuantityChange(
-                    transaction.isin, transaction.executed_at.date(), sign * transaction.quantity
-                )
-            )
-            inputs.names.setdefault(transaction.isin, transaction.instrument_name)
-            earliest_dates.append(transaction.executed_at.date())
-            # net_value is after commission: what the purchase cost, what
-            # the sale paid out.
-            flow = CashFlow(
-                transaction.executed_at.date(), transaction.currency, abs(transaction.net_value)
-            )
-            (inputs.purchases if transaction.side == "buy" else inputs.sales).append(flow)
-        # An instrument bought and sold between two imports was never in a
-        # snapshot, so nothing valued it -- its own latest trade price is
-        # then the only known value of one unit, on that trade's day.
-        latest_trades = {t.isin: t for t in sorted(transactions, key=lambda t: t.executed_at)}
-        for key, trade in latest_trades.items():
-            if key not in inputs.anchors:
-                inputs.anchors[key] = Anchor(
-                    unit_value=trade.price, currency=trade.currency, as_of=trade.executed_at.date()
-                )
-            _add_listing(inputs, key, listings.get(key))
 
-    latest_rows = positions_by_snapshot[snapshot_rows[-1][0]] if snapshot_rows else []
-    inputs.current_rows = [(_key(r), r) for r in latest_rows]
-    cash_operations = repository.list_cash_operations(connection, portfolio_id)
+def _add_transactions(
+    inputs: _PortfolioInputs,
+    transactions: list[BossaTransaction],
+    listings: dict[str, InstrumentListing],
+    earliest_dates: list[date],
+) -> None:
+    # A ledger (Bossa) states every change on its own day: exact, so it
+    # replaces the step-between-imports reading of its snapshots.
+    inputs.is_ledger = True
+    for transaction in transactions:
+        sign = Decimal(1) if transaction.side == "buy" else Decimal(-1)
+        inputs.changes.append(
+            QuantityChange(
+                transaction.isin, transaction.executed_at.date(), sign * transaction.quantity
+            )
+        )
+        inputs.names.setdefault(transaction.isin, transaction.instrument_name)
+        earliest_dates.append(transaction.executed_at.date())
+        # net_value is after commission: what the purchase cost, what
+        # the sale paid out.
+        flow = CashFlow(
+            transaction.executed_at.date(), transaction.currency, abs(transaction.net_value)
+        )
+        (inputs.purchases if transaction.side == "buy" else inputs.sales).append(flow)
+    # An instrument bought and sold between two imports was never in a
+    # snapshot, so nothing valued it -- its own latest trade price is
+    # then the only known value of one unit, on that trade's day.
+    latest_trades = {t.isin: t for t in sorted(transactions, key=lambda t: t.executed_at)}
+    for key, trade in latest_trades.items():
+        if key not in inputs.anchors:
+            inputs.anchors[key] = Anchor(
+                unit_value=trade.price, currency=trade.currency, as_of=trade.executed_at.date()
+            )
+        _add_listing(inputs, key, listings.get(key))
+
+
+def _add_costs(
+    inputs: _PortfolioInputs,
+    cash_operations: list[CashOperation],
+    snapshot_rows: list[SnapshotRow],
+    latest_rows: list[PositionRow],
+    lots_by_position: dict[UUID, list[tuple[Decimal, date]]],
+) -> None:
+    """What was paid for the holdings: cash operations when the broker
+    exported them, else the latest snapshot's average cost."""
     if cash_operations and inputs.is_ledger:
         inputs.has_side_cash = True
         _add_cash_flows(inputs, cash_operations, trades=False)
@@ -514,14 +621,13 @@ def _collect_inputs(
         for position_row in latest_rows:
             _add_costed_row(inputs, _key(position_row), position_row, lots_by_position, held_on)
 
-    closed_lots = [] if inputs.is_ledger else repository.list_closed_lots(connection, portfolio_id)
-    if closed_lots and snapshot_rows:
-        held_on = snapshot_rows[-1][3]
-        _add_lot_history(
-            inputs, closed_lots, latest_rows, lots_by_position, held_on, earliest_dates
-        )
-    _apply_overrides(inputs, overrides)
 
+def _add_manual_positions(
+    connection: duckdb.DuckDBPyConnection,
+    inputs: _PortfolioInputs,
+    portfolio_id: UUID,
+    earliest_dates: list[date],
+) -> None:
     manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
     if manual_snapshot is not None:
         for position_row in repository.list_positions(connection, manual_snapshot[0]):
@@ -537,9 +643,6 @@ def _collect_inputs(
             anchor = _manual_anchor(position_row, valuations)
             if anchor is not None:
                 inputs.anchors[key] = anchor
-
-    inputs.earliest = min(earliest_dates, default=None)
-    return inputs
 
 
 def _add_listing(inputs: _PortfolioInputs, key: str, listing: InstrumentListing | None) -> None:
