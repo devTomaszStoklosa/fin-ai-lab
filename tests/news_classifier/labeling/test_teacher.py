@@ -16,9 +16,7 @@ def _prompt_registry() -> PromptRegistry:
 
 
 def _headline(text: str) -> Headline:
-    return Headline(
-        headline=text, source="bankier", published_at=datetime(2026, 9, 17, 12, 0, 0)
-    )
+    return Headline(headline=text, source="bankier", published_at=datetime(2026, 9, 17, 12, 0, 0))
 
 
 async def test_label_with_teacher_parses_a_valid_response() -> None:

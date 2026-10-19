@@ -87,7 +87,7 @@ async def test_critique_brief_strips_unsourced_claims_flagged_by_the_critic() ->
                 '{"claim_verdicts": ['
                 '{"has_identifiable_source": true, "reason": "ok"}, '
                 '{"has_identifiable_source": false, "reason": "brak konkretnego źródła"}'
-                ']}'
+                "]}"
             )
         }
     )

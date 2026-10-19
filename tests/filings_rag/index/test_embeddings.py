@@ -51,9 +51,7 @@ async def test_embed_with_cache_only_fetches_the_missing_texts(tmp_path: Path) -
 
 async def test_embed_with_cache_keys_by_model_too(tmp_path: Path) -> None:
     client = FakeEmbeddingClient(dim=4)
-    await embed_with_cache(
-        ["apples"], model="model-a", embedding_client=client, cache_dir=tmp_path
-    )
+    await embed_with_cache(["apples"], model="model-a", embedding_client=client, cache_dir=tmp_path)
 
     await embed_with_cache(["apples"], model="model-b", embedding_client=client, cache_dir=tmp_path)
 

@@ -74,9 +74,7 @@ class OpenFigiClient:
             return _to_identification(matches[0], "resolved", rule)
 
         if broker_market is not None:
-            broker_matches = [
-                match for match in matches if match.get("exchCode") == broker_market
-            ]
+            broker_matches = [match for match in matches if match.get("exchCode") == broker_market]
             if len(broker_matches) == 1:
                 rule = (
                     "broker market" if currency is not None else "broker market (no currency match)"

@@ -66,15 +66,27 @@ async def run_committee(
     draft_briefs = await asyncio.gather(
         run_fundamental_brief(
             tools_by_name["ask_about_filings"],
-            llm_client, prompt_registry, model, portfolio_id, budget,
+            llm_client,
+            prompt_registry,
+            model,
+            portfolio_id,
+            budget,
         ),
         run_macro_brief(
             tools_by_name["get_market_regime"],
-            llm_client, prompt_registry, model, portfolio_id, budget,
+            llm_client,
+            prompt_registry,
+            model,
+            portfolio_id,
+            budget,
         ),
         run_sentiment_brief(
             tools_by_name["get_news_sentiment"],
-            llm_client, prompt_registry, model, portfolio_id, budget,
+            llm_client,
+            prompt_registry,
+            model,
+            portfolio_id,
+            budget,
         ),
         run_stress_brief(portfolio, fx_client or NbpFxClient()),
     )

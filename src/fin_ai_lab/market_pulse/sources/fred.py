@@ -10,9 +10,7 @@ DEFAULT_MIN_INTERVAL_S = 1.0
 
 
 class FredClient:
-    def __init__(
-        self, api_key: str, *, http_client: ThrottledHttpClient | None = None
-    ) -> None:
+    def __init__(self, api_key: str, *, http_client: ThrottledHttpClient | None = None) -> None:
         self._api_key = api_key
         self._http = http_client or ThrottledHttpClient(
             FRED_BASE_URL, min_interval_s=DEFAULT_MIN_INTERVAL_S, provider="fred"

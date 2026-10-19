@@ -41,9 +41,13 @@ def _portfolio() -> Portfolio:
         valuation_date=date(2026, 9, 17),
         positions=[
             Position(
-                broker="xtb", account_type="regular", instrument_name="Orlen",
-                asset_class="equity", quantity=Decimal("10"),
-                market_value=Decimal("1000"), market_currency="PLN",
+                broker="xtb",
+                account_type="regular",
+                instrument_name="Orlen",
+                asset_class="equity",
+                quantity=Decimal("10"),
+                market_value=Decimal("1000"),
+                market_currency="PLN",
                 valuation_date=date(2026, 9, 17),
             )
         ],
@@ -75,14 +79,23 @@ async def test_run_committee_dispatches_four_subagents_critiques_and_assembles_r
     budget = BudgetGuard(budget_usd=Decimal("1.00"), max_iterations=10)
 
     report = await run_committee(
-        _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        _portfolio(),
+        "portfolio-1",
+        _FakeFredClient(),
+        _FakeNbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        budget,
         fx_client=_FakeFxClient(),
     )
 
     assert report.portfolio_id == "portfolio-1"
     assert {brief.perspective for brief in report.briefs} == {
-        "fundamental", "macro", "sentiment", "stress",
+        "fundamental",
+        "macro",
+        "sentiment",
+        "stress",
     }
     assert "[macro]" in report.text
     assert "[stress]" in report.text
@@ -104,8 +117,14 @@ async def test_run_committee_flags_explicit_disagreement_between_perspectives() 
     budget = BudgetGuard(budget_usd=Decimal("1.00"), max_iterations=10)
 
     report = await run_committee(
-        _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        _portfolio(),
+        "portfolio-1",
+        _FakeFredClient(),
+        _FakeNbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        budget,
         fx_client=_FakeFxClient(),
     )
 
@@ -127,8 +146,14 @@ async def test_run_committee_drops_a_brief_the_critic_finds_unsourced() -> None:
     budget = BudgetGuard(budget_usd=Decimal("1.00"), max_iterations=10)
 
     report = await run_committee(
-        _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        _portfolio(),
+        "portfolio-1",
+        _FakeFredClient(),
+        _FakeNbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        budget,
         fx_client=_FakeFxClient(),
     )
 
@@ -143,8 +168,14 @@ async def test_run_committee_stops_before_dispatch_when_budget_exhausted() -> No
     budget.record(Decimal("0.01"))
 
     report = await run_committee(
-        _portfolio(), "portfolio-1", _FakeFredClient(), _FakeNbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        _portfolio(),
+        "portfolio-1",
+        _FakeFredClient(),
+        _FakeNbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        budget,
     )
 
     assert llm_client.requests == []

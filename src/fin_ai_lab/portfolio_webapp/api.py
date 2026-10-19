@@ -926,8 +926,7 @@ def create_app(
             ),
             top5_share=_as_percent(weights.top5_share),
             allocation_by_asset_class={
-                key: _as_percent(value)
-                for key, value in weights.allocation_by_asset_class.items()
+                key: _as_percent(value) for key, value in weights.allocation_by_asset_class.items()
             },
             allocation_by_currency={
                 key: _as_percent(value) for key, value in weights.allocation_by_currency.items()
@@ -1650,16 +1649,29 @@ def create_app(
             assert budget is not None
             return asyncio.run(
                 run_single_agent(
-                    portfolio, portfolio_id, fred_client, nbp_client,
-                    llm_client, prompt_registry, MODEL, budget,
+                    portfolio,
+                    portfolio_id,
+                    fred_client,
+                    nbp_client,
+                    llm_client,
+                    prompt_registry,
+                    MODEL,
+                    budget,
                 )
             )
         if variant == "committee":
             assert budget is not None
             return asyncio.run(
                 run_committee(
-                    portfolio, portfolio_id, fred_client, nbp_client,
-                    llm_client, prompt_registry, MODEL, budget, fx_client=fx_client,
+                    portfolio,
+                    portfolio_id,
+                    fred_client,
+                    nbp_client,
+                    llm_client,
+                    prompt_registry,
+                    MODEL,
+                    budget,
+                    fx_client=fx_client,
                 )
             )
         # "compare": qa_target.compare_committee_vs_single builds its own,
@@ -1668,8 +1680,15 @@ def create_app(
         # --yes-style budget-override flag either).
         return asyncio.run(
             compare_committee_vs_single(
-                portfolio, portfolio_id, fred_client, nbp_client,
-                llm_client, prompt_registry, MODEL, committee_budget_usd, fx_client=fx_client,
+                portfolio,
+                portfolio_id,
+                fred_client,
+                nbp_client,
+                llm_client,
+                prompt_registry,
+                MODEL,
+                committee_budget_usd,
+                fx_client=fx_client,
             )
         )
 
@@ -1694,8 +1713,16 @@ def create_app(
 
         try:
             result = await asyncio.to_thread(
-                _run_variant_sync, variant, portfolio, portfolio_id,
-                fred_client, nbp_client, llm_client, prompt_registry, fx_client, budget,
+                _run_variant_sync,
+                variant,
+                portfolio,
+                portfolio_id,
+                fred_client,
+                nbp_client,
+                llm_client,
+                prompt_registry,
+                fx_client,
+                budget,
             )
         except Exception as exc:
             # A job's failure must never crash this background task silently
@@ -1727,9 +1754,7 @@ def _resolve_portfolio_and_date(
     try:
         parsed_date = date_type.fromisoformat(valuation_date)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=422, detail={"errors": [str(exc)], "warnings": []}
-        ) from exc
+        raise HTTPException(status_code=422, detail={"errors": [str(exc)], "warnings": []}) from exc
 
     return portfolio, parsed_date
 
@@ -2510,8 +2535,17 @@ def _to_report_out(row: repository.ReportRow) -> ReportOut:
 
 def _to_committee_job_out(row: repository.CommitteeJobRow) -> CommitteeJobOut:
     (
-        job_id, _portfolio_id, _snapshot_id, variant, status, created_at,
-        finished_at, _model, cost_usd, error, result_json,
+        job_id,
+        _portfolio_id,
+        _snapshot_id,
+        variant,
+        status,
+        created_at,
+        finished_at,
+        _model,
+        cost_usd,
+        error,
+        result_json,
     ) = row
     result: CommitteeReport | ComparisonReport | None = None
     if result_json is not None:

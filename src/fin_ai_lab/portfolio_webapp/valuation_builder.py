@@ -511,9 +511,7 @@ def _collect_inputs(
         for position_row in latest_rows:
             _add_costed_row(inputs, _key(position_row), position_row, lots_by_position, held_on)
 
-    closed_lots = (
-        [] if inputs.is_ledger else repository.list_closed_lots(connection, portfolio_id)
-    )
+    closed_lots = [] if inputs.is_ledger else repository.list_closed_lots(connection, portfolio_id)
     if closed_lots and snapshot_rows:
         held_on = snapshot_rows[-1][3]
         _add_lot_history(

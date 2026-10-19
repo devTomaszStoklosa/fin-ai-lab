@@ -67,8 +67,14 @@ def test_negative_quantity_rejected_for_non_derivative() -> None:
 
 
 def test_negative_quantity_allowed_for_derivative() -> None:
-    position = _position(quantity=Decimal("-1"), asset_class="derivative", avg_cost=None,
-                          cost_currency=None, market_value=None, market_currency=None)
+    position = _position(
+        quantity=Decimal("-1"),
+        asset_class="derivative",
+        avg_cost=None,
+        cost_currency=None,
+        market_value=None,
+        market_currency=None,
+    )
 
     assert position.quantity == Decimal("-1")
 

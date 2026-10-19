@@ -64,9 +64,7 @@ def _to_openai_messages(request: LlmRequest) -> list[dict]:
     system_instruction = request.system_instruction
     if request.response_schema is not None:
         system_instruction = (
-            f"{system_instruction}\n\n{_JSON_MODE_HINT}"
-            if system_instruction
-            else _JSON_MODE_HINT
+            f"{system_instruction}\n\n{_JSON_MODE_HINT}" if system_instruction else _JSON_MODE_HINT
         )
 
     messages: list[dict] = []
@@ -122,9 +120,7 @@ class GroqLlmClient:
                     messages=messages,
                     max_tokens=request.max_output_tokens,
                     tools=tool_schemas,
-                    response_format=(
-                        {"type": "json_object"} if request.response_schema else None
-                    ),
+                    response_format=({"type": "json_object"} if request.response_schema else None),
                 )
                 usage = response.usage
                 input_tokens += usage.prompt_tokens or 0
