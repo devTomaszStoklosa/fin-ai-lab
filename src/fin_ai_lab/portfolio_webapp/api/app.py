@@ -39,15 +39,23 @@ from fin_ai_lab.portfolio_webapp.aggregators import (
     validate_no_cycle,
 )
 from fin_ai_lab.portfolio_webapp.api import (
+    benchmark,
+    breakdowns,
+    dividends,
     filings_rag,
     imports,
     market_pulse,
+    metrics,
     news_classifier,
     portfolios,
     positions,
+    shares,
     system,
+    valuation,
 )
 from fin_ai_lab.portfolio_webapp.api.common import (
+    base_currency_value,
+    current_position_rows,
     get_db,
     llm_unavailable,
     position_row_to_domain,
@@ -72,70 +80,35 @@ from fin_ai_lab.portfolio_webapp.api.defaults import (
     _fetch_daily_closes,
 )
 from fin_ai_lab.portfolio_webapp.api.deps import AppDeps
-from fin_ai_lab.portfolio_webapp.api.live_values import live_market_values
-from fin_ai_lab.portfolio_webapp.benchmark import BENCHMARKS, normalize_ticker
-from fin_ai_lab.portfolio_webapp.benchmark_builder import (
-    BenchmarkNotFoundError,
-    BenchmarkUnavailableError,
-    build_benchmark,
-)
-from fin_ai_lab.portfolio_webapp.breakdowns import (
-    BUILTIN_ASSET_CLASS,
-    BUILTIN_NAMES,
-    BUILTIN_PREFIX,
-    Breakdown,
-    BreakdownError,
-    validate_parent,
-)
-from fin_ai_lab.portfolio_webapp.dividend_forecast_builder import (
-    DividendsFetcher,
-    build_dividend_forecast,
-)
-from fin_ai_lab.portfolio_webapp.dividends_builder import build_dividend_history
+from fin_ai_lab.portfolio_webapp.benchmark import normalize_ticker
+from fin_ai_lab.portfolio_webapp.dividend_forecast_builder import DividendsFetcher
 from fin_ai_lab.portfolio_webapp.instrument_overrides_builder import (
     UnknownYahooSymbolError,
     YahooUnavailableError,
     checked_override,
 )
-from fin_ai_lab.portfolio_webapp.instruments import Identities, asset_assignments
 from fin_ai_lab.portfolio_webapp.instruments_builder import build_instruments, load_link_state
-from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow
 from fin_ai_lab.portfolio_webapp.schemas import (
     AggregatorCreate,
     AggregatorOut,
-    AssignmentIn,
-    BenchmarkOptionOut,
-    BenchmarkOut,
-    BreakdownCreate,
-    BreakdownGroupIn,
-    BreakdownGroupOut,
-    BreakdownOut,
-    BreakdownUpdate,
     CommitteeAnalysisRequest,
     CommitteeJobOut,
     CommitteeJobStatus,
     CommitteeVariant,
     ConfirmBudgetRequest,
-    DividendForecastOut,
-    DividendHistoryOut,
     InstrumentDetachIn,
     InstrumentLinkIn,
     InstrumentOwnerDataIn,
     InstrumentsOut,
-    MetricsOut,
     ReportOut,
-    SharesOut,
-    ValuationOut,
 )
-from fin_ai_lab.portfolio_webapp.shares_builder import ALL_PORTFOLIOS_NAME, build_shares
-from fin_ai_lab.portfolio_webapp.valuation import MissingFxRateError
 from fin_ai_lab.portfolio_webapp.valuation_builder import (
     DailyClosesFetcher,
     build_valuation,
 )
-from fin_ai_lab.portfolio_xray.canonical import Portfolio, Position
+from fin_ai_lab.portfolio_xray.canonical import Portfolio
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
-from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
+from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient
 from fin_ai_lab.portfolio_xray.metrics.price_history import (
     fetch_dividends,
     fetch_quote_currency,
@@ -280,354 +253,14 @@ def create_app(
         portfolios,
         imports,
         positions,
+        metrics,
+        valuation,
+        benchmark,
+        dividends,
+        breakdowns,
+        shares,
     ):
         app.include_router(build.build_router(deps))
-
-    @app.get("/api/portfolios/{portfolio_id}/metrics", response_model=MetricsOut)
-    async def get_metrics(
-        portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> MetricsOut:
-        if repository.get_portfolio(connection, portfolio_id) is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-
-        rows = _current_position_rows(connection, portfolio_id)
-        fx_client = fx_client_factory()
-        positions = [position_row_to_domain(row) for row in rows]
-        live_values = await live_market_values(
-            positions, price_ratio_fetcher, fx_client, today_provider()
-        )
-        positions_with_base_value = []
-        for position, live_value in zip(positions, live_values, strict=True):
-            if live_value is not None:
-                position = position.model_copy(update={"market_value": live_value})
-            positions_with_base_value.append(
-                (position, await _base_currency_value(position, fx_client))
-            )
-
-        try:
-            weights = compute_weights(positions_with_base_value)
-        except ValueError:
-            # Empty portfolio, or every position values at 0 -- nothing to
-            # divide by, not a server error.
-            return MetricsOut(
-                position_count=len(rows),
-                total_value=None,
-                base_currency=BASE_CURRENCY,
-                hhi=None,
-                effective_positions=None,
-                top5_share=None,
-                allocation_by_asset_class={},
-                allocation_by_currency={},
-            )
-
-        total_value = sum((w.base_currency_value for w in weights.weighted_positions), Decimal(0))
-        return MetricsOut(
-            position_count=len(rows),
-            total_value=total_value,
-            base_currency=BASE_CURRENCY,
-            hhi=weights.hhi.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
-            effective_positions=weights.effective_positions.quantize(
-                Decimal("0.1"), rounding=ROUND_HALF_UP
-            ),
-            top5_share=_as_percent(weights.top5_share),
-            allocation_by_asset_class={
-                key: _as_percent(value) for key, value in weights.allocation_by_asset_class.items()
-            },
-            allocation_by_currency={
-                key: _as_percent(value) for key, value in weights.allocation_by_currency.items()
-            },
-        )
-
-    @app.get("/api/valuation", response_model=ValuationOut)
-    async def get_all_portfolios_valuation(
-        refresh: bool = False,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> ValuationOut:
-        # Every portfolio on one day axis -- the start page's sum and chart.
-        return await build_valuation(
-            connection,
-            repository.list_portfolios(connection),
-            today=today_provider(),
-            refresh=refresh,
-            closes_fetcher=daily_closes_fetcher,
-            fx_client=fx_client_factory(),
-        )
-
-    @app.get("/api/portfolios/{portfolio_id}/valuation", response_model=ValuationOut)
-    async def get_portfolio_valuation(
-        portfolio_id: UUID,
-        refresh: bool = False,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> ValuationOut:
-        portfolio = repository.get_portfolio(connection, portfolio_id)
-        if portfolio is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-        return await build_valuation(
-            connection,
-            [portfolio],
-            today=today_provider(),
-            refresh=refresh,
-            closes_fetcher=daily_closes_fetcher,
-            fx_client=fx_client_factory(),
-        )
-
-    @app.get("/api/benchmarks", response_model=list[BenchmarkOptionOut])
-    def list_benchmarks() -> list[BenchmarkOptionOut]:
-        return [
-            BenchmarkOptionOut(id=b.id, label=b.label, ticker=b.ticker, note=b.note)
-            for b in BENCHMARKS
-        ]
-
-    # #273: asked for only when the chart's comparison mode is open -- no
-    # Yahoo lookup for a benchmark nobody looks at. `start` is the
-    # valuation's first day, so both series share one day axis.
-    @app.get("/api/benchmark", response_model=BenchmarkOut)
-    async def get_benchmark(ticker: str, start: date_type, refresh: bool = False) -> BenchmarkOut:
-        normalized = normalize_ticker(ticker)
-        if normalized is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Nieprawidłowy ticker -- dozwolone litery, cyfry i znaki . ^ = -",
-            )
-        try:
-            return await build_benchmark(
-                normalized,
-                start=start,
-                today=today_provider(),
-                refresh=refresh,
-                closes_fetcher=benchmark_closes_fetcher,
-                quote_currency_fetcher=quote_currency_fetcher,
-                fx_client=fx_client_factory(),
-            )
-        except BenchmarkNotFoundError:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Yahoo nie zna tickera {normalized} albo nie ma jego historii.",
-            ) from None
-        except BenchmarkUnavailableError:
-            raise HTTPException(
-                status_code=502, detail="Yahoo nie odpowiedziało -- spróbuj ponownie za chwilę."
-            ) from None
-        except MissingFxRateError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Brak kursu NBP dla {exc.currency} -- nie da się przeliczyć "
-                f"{normalized} na PLN.",
-            ) from None
-
-    @app.get("/api/dividends/history", response_model=DividendHistoryOut)
-    async def get_all_portfolios_dividend_history(
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> DividendHistoryOut:
-        # #265: every portfolio together -- the start page's dividends card.
-        return await build_dividend_history(
-            connection,
-            repository.list_portfolios(connection),
-            today=today_provider(),
-            fx_client=fx_client_factory(),
-        )
-
-    @app.get("/api/portfolios/{portfolio_id}/dividends/history", response_model=DividendHistoryOut)
-    async def get_portfolio_dividend_history(
-        portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> DividendHistoryOut:
-        portfolio = repository.get_portfolio(connection, portfolio_id)
-        if portfolio is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-        return await build_dividend_history(
-            connection, [portfolio], today=today_provider(), fx_client=fx_client_factory()
-        )
-
-    async def _dividend_forecast(
-        connection: duckdb.DuckDBPyConnection, portfolio_rows: list[PortfolioRow]
-    ) -> DividendForecastOut:
-        return await build_dividend_forecast(
-            connection,
-            portfolio_rows,
-            today=today_provider(),
-            fx_client=fx_client_factory(),
-            dividends_fetcher=dividends_fetcher,
-            quote_currency_fetcher=quote_currency_fetcher,
-            closes_fetcher=daily_closes_fetcher,
-        )
-
-    # #266: separate from the history -- it asks Yahoo and takes longer,
-    # while the history comes from the database alone and shows at once.
-    @app.get("/api/dividends/forecast", response_model=DividendForecastOut)
-    async def get_all_portfolios_dividend_forecast(
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> DividendForecastOut:
-        return await _dividend_forecast(connection, repository.list_portfolios(connection))
-
-    @app.get(
-        "/api/portfolios/{portfolio_id}/dividends/forecast", response_model=DividendForecastOut
-    )
-    async def get_portfolio_dividend_forecast(
-        portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> DividendForecastOut:
-        portfolio = repository.get_portfolio(connection, portfolio_id)
-        if portfolio is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-        return await _dividend_forecast(connection, [portfolio])
-
-    @app.get("/api/breakdowns", response_model=list[BreakdownOut])
-    def list_breakdowns(
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> list[BreakdownOut]:
-        identities = load_link_state(connection).identities
-        return [_to_breakdown_out(b, identities) for b in repository.list_breakdowns(connection)]
-
-    @app.post("/api/breakdowns", response_model=BreakdownOut, status_code=201)
-    def create_breakdown(
-        payload: BreakdownCreate,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> BreakdownOut:
-        return _to_breakdown_out(
-            repository.create_breakdown(connection, name=payload.name), _identities(connection)
-        )
-
-    @app.put("/api/breakdowns/{breakdown_id}", response_model=BreakdownOut)
-    def update_breakdown(
-        breakdown_id: UUID,
-        payload: BreakdownUpdate,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> BreakdownOut:
-        _require_breakdown(connection, breakdown_id)
-        updated = repository.update_breakdown(
-            connection, breakdown_id=breakdown_id, name=payload.name, is_default=payload.is_default
-        )
-        return _to_breakdown_out(updated, _identities(connection))
-
-    @app.delete("/api/breakdowns/{breakdown_id}", status_code=204)
-    def delete_breakdown(
-        breakdown_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> None:
-        _require_breakdown(connection, breakdown_id)
-        repository.delete_breakdown(connection, breakdown_id)
-
-    @app.post(
-        "/api/breakdowns/{breakdown_id}/duplicate", response_model=BreakdownOut, status_code=201
-    )
-    def duplicate_breakdown(
-        breakdown_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> BreakdownOut:
-        source = _require_breakdown(connection, breakdown_id)
-        name = f"{source.name} (kopia)"[:100]
-        duplicated = repository.duplicate_breakdown(connection, source, name=name)
-        return _to_breakdown_out(duplicated, _identities(connection))
-
-    @app.post("/api/breakdowns/{breakdown_id}/groups", response_model=BreakdownOut, status_code=201)
-    def create_breakdown_group(
-        breakdown_id: UUID,
-        payload: BreakdownGroupIn,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> BreakdownOut:
-        breakdown = _require_breakdown(connection, breakdown_id)
-        _validate_parent(None, payload.parent_id, breakdown)
-        repository.create_breakdown_group(
-            connection, breakdown_id=breakdown_id, name=payload.name, parent_id=payload.parent_id
-        )
-        return _to_breakdown_out(
-            _require_breakdown(connection, breakdown_id), _identities(connection)
-        )
-
-    @app.put("/api/breakdowns/{breakdown_id}/groups/{group_id}", response_model=BreakdownOut)
-    def update_breakdown_group(
-        breakdown_id: UUID,
-        group_id: UUID,
-        payload: BreakdownGroupIn,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> BreakdownOut:
-        breakdown = _require_breakdown(connection, breakdown_id)
-        _require_group(breakdown, group_id)
-        _validate_parent(group_id, payload.parent_id, breakdown)
-        repository.update_breakdown_group(
-            connection, group_id=group_id, name=payload.name, parent_id=payload.parent_id
-        )
-        return _to_breakdown_out(
-            _require_breakdown(connection, breakdown_id), _identities(connection)
-        )
-
-    @app.delete("/api/breakdowns/{breakdown_id}/groups/{group_id}", response_model=BreakdownOut)
-    def delete_breakdown_group(
-        breakdown_id: UUID,
-        group_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> BreakdownOut:
-        breakdown = _require_breakdown(connection, breakdown_id)
-        _require_group(breakdown, group_id)
-        repository.delete_breakdown_group(connection, breakdown, group_id)
-        return _to_breakdown_out(
-            _require_breakdown(connection, breakdown_id), _identities(connection)
-        )
-
-    @app.put("/api/breakdowns/{breakdown_id}/assignments", response_model=BreakdownOut)
-    def set_breakdown_assignment(
-        breakdown_id: UUID,
-        payload: AssignmentIn,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> BreakdownOut:
-        breakdown = _require_breakdown(connection, breakdown_id)
-        if payload.group_id is not None and all(g.id != payload.group_id for g in breakdown.groups):
-            raise HTTPException(status_code=422, detail="Grupa nie należy do tego podziału.")
-        # Stored under the asset key (S12); the same asset's other member
-        # keys lose what they held -- the owner just placed the whole asset.
-        identities = _identities(connection)
-        asset_key = identities.asset_key(payload.instrument_key)
-        repository.set_assignment(
-            connection,
-            breakdown_id=breakdown_id,
-            instrument_key=asset_key,
-            group_id=payload.group_id,
-            replaces=tuple(k for k in identities.members(asset_key) if k != asset_key),
-        )
-        return _to_breakdown_out(_require_breakdown(connection, breakdown_id), identities)
-
-    @app.get("/api/shares", response_model=SharesOut)
-    async def get_shares(
-        breakdown: str = BUILTIN_ASSET_CLASS,
-        portfolio_id: UUID | None = None,
-        connection: duckdb.DuckDBPyConnection = Depends(get_db),
-    ) -> SharesOut:
-        # One portfolio, or every portfolio when portfolio_id is left out --
-        # the same two scopes as the valuation endpoints.
-        if portfolio_id is not None:
-            portfolio = repository.get_portfolio(connection, portfolio_id)
-            if portfolio is None:
-                raise HTTPException(status_code=404, detail="Portfolio not found")
-            rows, root_name = [portfolio], portfolio[1]
-        else:
-            rows, root_name = repository.list_portfolios(connection), ALL_PORTFOLIOS_NAME
-
-        builtin, stored = None, None
-        if breakdown.startswith(BUILTIN_PREFIX):
-            if breakdown not in BUILTIN_NAMES:
-                raise HTTPException(status_code=422, detail=f"Nieznany podział: {breakdown}")
-            builtin = breakdown
-        else:
-            try:
-                breakdown_id = UUID(breakdown)
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=422, detail=f"Nieznany podział: {breakdown}"
-                ) from exc
-            stored = _require_breakdown(connection, breakdown_id)
-
-        return await build_shares(
-            connection,
-            rows,
-            builtin=builtin,
-            breakdown=stored,
-            root_name=root_name,
-            today=today_provider(),
-            closes_fetcher=daily_closes_fetcher,
-            fx_client=fx_client_factory(),
-        )
 
     async def instruments_out(connection: duckdb.DuckDBPyConnection) -> InstrumentsOut:
         # Every portfolio, whatever screen asks: identity is global (S12).
@@ -870,12 +503,11 @@ def create_app(
                 if cached is not None:
                     return _to_report_out(cached)
 
-            rows = _current_position_rows(connection, portfolio_id)
+            rows = current_position_rows(connection, portfolio_id)
             positions = [position_row_to_domain(row) for row in rows]
             fx_client = fx_client_factory()
             positions_with_base_value = [
-                (position, await _base_currency_value(position, fx_client))
-                for position in positions
+                (position, await base_currency_value(position, fx_client)) for position in positions
             ]
             try:
                 weights = compute_weights(positions_with_base_value)
@@ -957,7 +589,7 @@ def create_app(
             if cached is not None:
                 return _to_committee_job_out(cached)
 
-        rows = _current_position_rows(connection, portfolio_id)
+        rows = current_position_rows(connection, portfolio_id)
         positions = [position_row_to_domain(row) for row in rows]
         portfolio = Portfolio(positions=positions, valuation_date=valuation_date)
 
@@ -1150,21 +782,6 @@ def create_app(
     return app
 
 
-def _current_position_rows(
-    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID
-) -> list[PositionRow]:
-    # Same "current state" as PortfolioDetail.tsx's own merge (S4): the
-    # latest real import, if any, plus every manually added position.
-    rows: list[PositionRow] = []
-    snapshots = repository.list_snapshots(connection, portfolio_id)
-    if snapshots:
-        rows.extend(repository.list_positions(connection, snapshots[0][0]))
-    manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
-    if manual_snapshot is not None:
-        rows.extend(repository.list_positions(connection, manual_snapshot[0]))
-    return rows
-
-
 def _current_reporting_context(
     connection: duckdb.DuckDBPyConnection, portfolio_id: UUID
 ) -> tuple[UUID, date_type] | None:
@@ -1184,17 +801,6 @@ def _current_reporting_context(
     return None
 
 
-async def _base_currency_value(position: Position, fx_client: NbpFxClient) -> Decimal:
-    # Mirrors report/orchestrator.py's own (module-private) _base_currency_value
-    # -- same reasoning as _flag_injection_warnings: P1-private, portfolio_webapp
-    # may only reach its public surface (docs/ARCHITECTURE.md rule 6).
-    if position.market_value is None or position.market_currency is None:
-        return Decimal(0)
-    return await convert_to_base_currency(
-        position.market_value, position.market_currency, position.valuation_date, fx_client
-    )
-
-
 async def _instrument_values_by_key(
     connection: duckdb.DuckDBPyConnection, portfolio_id: UUID, fx_client: NbpFxClient
 ) -> dict[str, Decimal]:
@@ -1203,10 +809,10 @@ async def _instrument_values_by_key(
     # metrics.py would use before #190's live-refresh, kept simple here:
     # an aggregate is a grouping/display concern, not itself a live quote).
     values: dict[str, Decimal] = {}
-    for row in _current_position_rows(connection, portfolio_id):
+    for row in current_position_rows(connection, portfolio_id):
         position = position_row_to_domain(row)
         key = instrument_key(position)
-        values[key] = values.get(key, Decimal(0)) + await _base_currency_value(position, fx_client)
+        values[key] = values.get(key, Decimal(0)) + await base_currency_value(position, fx_client)
     return values
 
 
@@ -1224,45 +830,6 @@ def _to_aggregator_out(
         member_aggregator_ids=aggregator.member_aggregator_ids,
         value=value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
         base_currency=BASE_CURRENCY,
-    )
-
-
-def _require_breakdown(connection: duckdb.DuckDBPyConnection, breakdown_id: UUID) -> Breakdown:
-    breakdown = repository.get_breakdown(connection, breakdown_id)
-    if breakdown is None:
-        raise HTTPException(status_code=404, detail="Breakdown not found")
-    return breakdown
-
-
-def _require_group(breakdown: Breakdown, group_id: UUID) -> None:
-    if all(group.id != group_id for group in breakdown.groups):
-        raise HTTPException(status_code=404, detail="Group not found")
-
-
-def _validate_parent(group_id: UUID | None, parent_id: UUID | None, breakdown: Breakdown) -> None:
-    try:
-        validate_parent(group_id, parent_id, breakdown.groups)
-    except BreakdownError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-def _identities(connection: duckdb.DuckDBPyConnection) -> Identities:
-    return load_link_state(connection).identities
-
-
-def _to_breakdown_out(breakdown: Breakdown, identities: Identities) -> BreakdownOut:
-    # Keyed by asset (S12), the same keys the shares tree uses.
-    return BreakdownOut(
-        id=breakdown.id,
-        name=breakdown.name,
-        is_default=breakdown.is_default,
-        groups=[
-            BreakdownGroupOut(
-                id=group.id, name=group.name, parent_id=group.parent_id, position=group.position
-            )
-            for group in breakdown.groups
-        ],
-        assignments=asset_assignments(breakdown.assignments, identities),
     )
 
 
@@ -1285,10 +852,6 @@ def _require_own_aggregator(
     if aggregator is None or aggregator.portfolio_id != portfolio_id:
         raise HTTPException(status_code=404, detail="Aggregator not found")
     return aggregator
-
-
-def _as_percent(fraction: Decimal) -> Decimal:
-    return (fraction * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
 def _to_report_out(row: repository.ReportRow) -> ReportOut:

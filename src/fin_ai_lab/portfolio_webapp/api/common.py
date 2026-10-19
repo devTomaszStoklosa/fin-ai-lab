@@ -2,18 +2,21 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 from typing import cast, get_args
+from uuid import UUID
 
 import duckdb
 from fastapi import HTTPException, Request
 from google.genai import errors as genai_errors
 
 from fin_ai_lab.portfolio_webapp import repository
+from fin_ai_lab.portfolio_webapp.breakdowns import Breakdown
 from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow, SnapshotRow
 from fin_ai_lab.portfolio_webapp.schemas import (
     PositionOut,
     SnapshotOut,
 )
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
+from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
 
 
 def llm_unavailable(exc: genai_errors.APIError) -> HTTPException:
@@ -140,3 +143,36 @@ def to_snapshot_out(row: SnapshotRow, positions: list[PositionOut]) -> SnapshotO
         source_file_date_max=date_max,
         positions=positions,
     )
+
+
+def current_position_rows(
+    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID
+) -> list[PositionRow]:
+    # Same "current state" as PortfolioDetail.tsx's own merge (S4): the
+    # latest real import, if any, plus every manually added position.
+    rows: list[PositionRow] = []
+    snapshots = repository.list_snapshots(connection, portfolio_id)
+    if snapshots:
+        rows.extend(repository.list_positions(connection, snapshots[0][0]))
+    manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
+    if manual_snapshot is not None:
+        rows.extend(repository.list_positions(connection, manual_snapshot[0]))
+    return rows
+
+
+async def base_currency_value(position: Position, fx_client: NbpFxClient) -> Decimal:
+    # Mirrors report/orchestrator.py's own (module-private) base_currency_value
+    # -- same reasoning as _flag_injection_warnings: P1-private, portfolio_webapp
+    # may only reach its public surface (docs/ARCHITECTURE.md rule 6).
+    if position.market_value is None or position.market_currency is None:
+        return Decimal(0)
+    return await convert_to_base_currency(
+        position.market_value, position.market_currency, position.valuation_date, fx_client
+    )
+
+
+def require_breakdown(connection: duckdb.DuckDBPyConnection, breakdown_id: UUID) -> Breakdown:
+    breakdown = repository.get_breakdown(connection, breakdown_id)
+    if breakdown is None:
+        raise HTTPException(status_code=404, detail="Breakdown not found")
+    return breakdown
