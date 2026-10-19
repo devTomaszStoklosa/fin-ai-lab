@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from groq import AsyncGroq
 from pydantic import BaseModel
@@ -117,12 +117,15 @@ class GroqLlmClient:
             for _ in range(MAX_TOOL_ITERATIONS):
                 response = await self._client.chat.completions.create(
                     model=request.model,
-                    messages=messages,
+                    # Plain dicts in the OpenAI message shape; the SDK's TypedDict
+                    # unions can't be satisfied by a list[dict].
+                    messages=cast(Any, messages),
                     max_tokens=request.max_output_tokens,
-                    tools=tool_schemas,
+                    tools=cast(Any, tool_schemas),
                     response_format=({"type": "json_object"} if request.response_schema else None),
                 )
                 usage = response.usage
+                assert usage is not None
                 input_tokens += usage.prompt_tokens or 0
                 output_tokens += usage.completion_tokens or 0
 

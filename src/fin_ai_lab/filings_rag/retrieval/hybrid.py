@@ -1,3 +1,5 @@
+from typing import cast
+
 import bm25s
 
 from fin_ai_lab.core.llm.embeddings import EmbeddingClient
@@ -74,7 +76,7 @@ def _bm25_scores(query: str, chunks: list[Chunk]) -> list[float]:
     retriever = bm25s.BM25()
     retriever.index(corpus_tokens, show_progress=False)
     query_tokens = bm25s.tokenize([query], show_progress=False, return_ids=False)
-    return list(retriever.get_scores(query_tokens[0]))
+    return list(retriever.get_scores(cast(list[str], query_tokens[0])))
 
 
 def _min_max_normalize(values: list[float]) -> list[float]:

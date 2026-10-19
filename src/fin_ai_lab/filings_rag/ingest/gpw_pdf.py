@@ -71,4 +71,6 @@ def _walk_outline(reader: PdfReader, items: list, headings: dict[int, str]) -> N
             page_number = reader.get_destination_page_number(item)
         except Exception:
             continue
+        if page_number is None:
+            continue
         headings.setdefault(page_number, str(item.title))

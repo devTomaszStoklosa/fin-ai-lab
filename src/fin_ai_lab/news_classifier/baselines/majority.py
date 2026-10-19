@@ -1,6 +1,6 @@
 from collections import Counter
 
-from fin_ai_lab.news_classifier.models import Headline, Label
+from fin_ai_lab.news_classifier.models import EventType, Headline, Label, Sentiment
 
 
 def classify_majority(headline: Headline, *, training_labels: list[Label]) -> Label:
@@ -13,6 +13,10 @@ def classify_majority(headline: Headline, *, training_labels: list[Label]) -> La
         raise ValueError("training_labels must not be empty")
     del headline  # baseline by definition, never looks at the input
 
-    sentiment = Counter(label.sentiment for label in training_labels).most_common(1)[0][0]
-    event_type = Counter(label.event_type for label in training_labels).most_common(1)[0][0]
+    sentiment = Counter[Sentiment](label.sentiment for label in training_labels).most_common(1)[0][
+        0
+    ]
+    event_type = Counter[EventType](label.event_type for label in training_labels).most_common(1)[
+        0
+    ][0]
     return Label(sentiment=sentiment, event_type=event_type, tickers=[])

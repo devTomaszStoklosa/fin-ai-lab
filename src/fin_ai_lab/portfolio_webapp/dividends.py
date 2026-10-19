@@ -195,7 +195,7 @@ def summarize(
     months = {year: [Decimal(0)] * MONTHS_IN_YEAR for year in range(first_year, today.year + 1)}
     for converted in counted:
         paid_on = converted.payment.paid_on
-        if paid_on.year in months:
+        if paid_on.year in months and converted.base_amount is not None:
             months[paid_on.year][paid_on.month - 1] += converted.base_amount
     years = [YearTotal(year, sum(m, Decimal(0)), m) for year, m in months.items()]
 
@@ -235,14 +235,18 @@ def _instrument_total(
     members: list[ConvertedPayment], asset_key: Callable[[str], str], recent_since: date
 ) -> InstrumentTotal:
     sources = [m.payment.source for m in members]
-    amounts = [m for m in members if m.base_amount is not None]
     return InstrumentTotal(
         instrument_key=payment_asset_key(sources[0], asset_key),
         name=display_name(list(dict.fromkeys(s.name for s in sources))),
         payment_count=len(members),
         last_paid_on=max(m.payment.paid_on for m in members),
-        total=sum((m.base_amount for m in amounts), Decimal(0)),
+        total=sum((m.base_amount for m in members if m.base_amount is not None), Decimal(0)),
         last_12_months=sum(
-            (m.base_amount for m in amounts if m.payment.paid_on > recent_since), Decimal(0)
+            (
+                m.base_amount
+                for m in members
+                if m.base_amount is not None and m.payment.paid_on > recent_since
+            ),
+            Decimal(0),
         ),
     )

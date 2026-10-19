@@ -3,6 +3,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 
@@ -27,7 +28,7 @@ class ThrottledHttpClient:
         cache_dir: Path = CACHE_DIR,
         timeout_s: float = 30.0,
         retry_backoff_base_s: float = 1.0,
-        transport: httpx.BaseTransport | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._min_interval_s = min_interval_s
@@ -39,10 +40,10 @@ class ThrottledHttpClient:
         self._last_request_at: float | None = None
         self._lock = asyncio.Lock()
 
-    async def get(self, path: str, params: dict[str, object] | None = None) -> object:
+    async def get(self, path: str, params: dict[str, object] | None = None) -> Any:
         return await self._request("GET", path, params=params or {})
 
-    async def post(self, path: str, json_body: object) -> object:
+    async def post(self, path: str, json_body: object) -> Any:
         return await self._request("POST", path, json_body=json_body)
 
     async def get_text(self, path: str, params: dict[str, object] | None = None) -> str:
@@ -58,7 +59,7 @@ class ThrottledHttpClient:
         params: dict[str, object] | None = None,
         json_body: object = None,
         as_text: bool = False,
-    ) -> object:
+    ) -> Any:
         cache_key = self._cache_key(method, path, params, json_body, as_text)
         cached = self._read_cache(cache_key, as_text)
         if cached is not None:
@@ -80,7 +81,7 @@ class ThrottledHttpClient:
         client: httpx.AsyncClient,
         method: str,
         url: str,
-        params: dict[str, object] | None,
+        params: dict[str, Any] | None,
         json_body: object,
     ) -> httpx.Response:
         response: httpx.Response | None = None
@@ -92,6 +93,7 @@ class ThrottledHttpClient:
                 return response
             if attempt < MAX_ATTEMPTS - 1:
                 await asyncio.sleep(self._retry_backoff_base_s * (2**attempt))
+        assert response is not None  # MAX_ATTEMPTS >= 1
         return response
 
     async def _throttle(self) -> None:
@@ -131,5 +133,5 @@ class ThrottledHttpClient:
     def _write_cache(self, key: str, value: object, as_text: bool = False) -> None:
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         suffix = "txt" if as_text else "json"
-        content = value if as_text else json.dumps(value)
+        content = cast(str, value) if as_text else json.dumps(value)
         (self._cache_dir / f"{key}.{suffix}").write_text(content, encoding="utf-8")

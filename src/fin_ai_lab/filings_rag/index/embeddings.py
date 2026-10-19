@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+from typing import cast
 
 from fin_ai_lab.core.llm.embeddings import EmbeddingClient
 
@@ -44,7 +45,7 @@ async def embed_with_cache(
     missing = [index for index, vector in enumerate(vectors) if vector is None]
     if missing:
         raise ValueError(f"Embedding client returned fewer vectors than requested: {missing}")
-    return vectors
+    return cast(list[list[float]], vectors)
 
 
 def _cache_key(text: str) -> str:

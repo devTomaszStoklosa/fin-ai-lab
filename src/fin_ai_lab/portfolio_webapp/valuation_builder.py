@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 import duckdb
@@ -350,7 +350,7 @@ def _asset(key: str, members: list[ValuedPositionOut]) -> AssetOut:
     quantity = sum((p.quantity for p in members), Decimal(0))
     values = [p.value for p in members if p.value is not None]
     classes = [p.asset_class for p in members if p.asset_class != "other"]
-    base = dict(
+    base: dict[str, Any] = dict(
         instrument_key=key,
         instrument_name=display_name([p.instrument_name for p in members]),
         isin=next((p.isin for p in members if p.isin), None),
@@ -402,7 +402,10 @@ def _weighted(
     quantity = sum((p.quantity for p in members), Decimal(0))
     if quantity <= 0:
         return None, None
-    total = sum((p.quantity * amount for p, (amount, _) in zip(members, figures, strict=True)))
+    # Every amount is set -- checked above, but not visible to the type checker.
+    total = sum(
+        p.quantity * cast(Decimal, amount) for p, (amount, _) in zip(members, figures, strict=True)
+    )
     return (Decimal(total) / quantity).quantize(PRICE, ROUND_HALF_UP), currencies.pop()
 
 

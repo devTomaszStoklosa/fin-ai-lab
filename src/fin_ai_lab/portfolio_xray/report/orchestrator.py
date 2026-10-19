@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+import pandas as pd
+
 from fin_ai_lab.core.llm.client import LlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
@@ -66,7 +68,7 @@ async def generate_report(
     except ValueError as exc:
         raise ReportGenerationError(str(exc)) from exc
 
-    price_history_by_key: dict[str, object] = {}
+    price_history_by_key: dict[str, pd.Series | None] = {}
     weight_by_key: dict[str, float] = {}
     instrument_metadata: dict[str, InstrumentMetadata] = {}
     category_weight: dict[str, Decimal] = {}

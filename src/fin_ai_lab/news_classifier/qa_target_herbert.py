@@ -2,8 +2,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import get_args
 
-import torch
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch  # pyright: ignore[reportMissingImports]  # extra "herbert"
+from transformers import (  # pyright: ignore[reportMissingImports]
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+)
 
 from fin_ai_lab.core.evals.models import RunContext
 from fin_ai_lab.news_classifier.models import EventType, Headline, Sentiment

@@ -1,8 +1,10 @@
+from typing import Any
+
 from fin_ai_lab.core.errors import GraderError
 from fin_ai_lab.core.evals.models import Case
 
 
-def get_field(output: object, field: str | None) -> object:
+def get_field(output: object, field: str | None) -> Any:
     if field is None:
         return output
     if isinstance(output, dict):
@@ -10,7 +12,7 @@ def get_field(output: object, field: str | None) -> object:
     return getattr(output, field, None)
 
 
-def require_expected_field(case: Case, field: str | None, grader_name: str) -> object:
+def require_expected_field(case: Case, field: str | None, grader_name: str) -> Any:
     if not field or case.expected is None or field not in case.expected:
         raise GraderError(f"Grader '{grader_name}' needs expected.{field} in case '{case.id}'")
     return case.expected[field]

@@ -3,6 +3,7 @@ import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -30,10 +31,13 @@ def fetch_price_history(ticker: str, cache_dir: Path = CACHE_DIR) -> pd.Series |
     payload = (
         {"dates": [], "close": None}
         if closes is None
-        else {"dates": [d.isoformat() for d in closes.index.date], "close": closes.tolist()}
+        else {
+            "dates": [d.isoformat() for d in cast(Any, closes.index).date],
+            "close": closes.tolist(),
+        }
     )
     cache_path.write_text(json.dumps(payload), encoding="utf-8")
-    return closes
+    return closes  # pyright: ignore[reportReturnType]
 
 
 def price_change_ratio(ticker: str, since: date, cache_dir: Path = CACHE_DIR) -> Decimal | None:
@@ -52,7 +56,7 @@ def price_change_ratio(ticker: str, since: date, cache_dir: Path = CACHE_DIR) ->
     if history.empty:
         return None
 
-    closes_by_date = {timestamp.date(): value for timestamp, value in history.items()}
+    closes_by_date = {cast(Any, timestamp).date(): value for timestamp, value in history.items()}
     eligible_dates = [d for d in closes_by_date if d <= since]
     if not eligible_dates:
         return None
@@ -109,7 +113,9 @@ def fetch_daily_closes(
     result = (
         None
         if closes is None
-        else {timestamp.date(): Decimal(str(value)) for timestamp, value in closes.items()}
+        else {
+            cast(Any, timestamp).date(): Decimal(str(value)) for timestamp, value in closes.items()
+        }
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
     payload = (
@@ -159,7 +165,7 @@ def fetch_dividends(ticker: str, cache_dir: Path = CACHE_DIR) -> list[tuple[date
     # value == value drops NaN, which Yahoo sometimes lists for a payout
     # it has not finalized -- same reasoning as the dropna() above.
     result = [
-        (timestamp.date(), Decimal(str(value)))
+        (cast(Any, timestamp).date(), Decimal(str(value)))
         for timestamp, value in series.items()
         if value == value and value > 0
     ]

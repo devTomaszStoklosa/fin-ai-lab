@@ -7,7 +7,7 @@ from datetime import date as date_type
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import get_args
+from typing import cast, get_args
 from uuid import UUID
 
 import duckdb
@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from fin_ai_lab.core.config import Settings
 from fin_ai_lab.core.errors import ResponseValidationError
-from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
+from fin_ai_lab.core.llm.client import CostTrackingLlmClient, GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.embeddings import EmbeddingClient, GeminiEmbeddingClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.llm.trace import TRACES_DIR, count_calls_today
@@ -119,6 +119,8 @@ from fin_ai_lab.portfolio_webapp.schemas import (
     BreakdownUpdate,
     CommitteeAnalysisRequest,
     CommitteeJobOut,
+    CommitteeJobStatus,
+    CommitteeVariant,
     ComparisonReportOut,
     ConfirmBudgetRequest,
     DividendForecastOut,
@@ -224,7 +226,7 @@ COMMITTEE_MAX_ITERATIONS = 10
 CONFIRMATION_TIMEOUT_S = 900.0
 
 
-def _default_llm_client() -> LlmClient:
+def _default_llm_client() -> CostTrackingLlmClient:
     settings = Settings()
     if settings.gemini_api_key:
         return GeminiLlmClient(api_key=settings.gemini_api_key)
@@ -259,7 +261,7 @@ def create_app(
     openfigi_client_factory: Callable[[], OpenFigiClient | None] = OpenFigiClient,
     # Same reasoning as openfigi_client_factory: tests substitute a
     # FakeLlmClient with canned responses instead of calling Gemini.
-    llm_client_factory: Callable[[], LlmClient] = _default_llm_client,
+    llm_client_factory: Callable[[], CostTrackingLlmClient] = _default_llm_client,
     # Same reasoning again: ParserRegistry() defaults to the real, checked-in
     # parsers/ directory -- fine for production (CLI and web app are meant
     # to share it), but /import/approve calls registry.save(), so a test
@@ -337,16 +339,16 @@ def create_app(
         # One lock per portfolio (02-spec.md edge case): a second "generuj"
         # while the first is still running waits for it instead of starting
         # a parallel LLM call for the same report.
-        app.state.report_locks: dict[UUID, asyncio.Lock] = {}
+        app.state.report_locks = {}  # dict[UUID, asyncio.Lock]
         # #226: bridges a committee job's blocking BudgetGuard.on_budget_exceeded
         # callback (running in a worker thread, see _make_confirm_callback) to
         # the POST .../confirm endpoint (running on the main event loop).
-        app.state.committee_confirmations: dict[UUID, threading.Event] = {}
-        app.state.committee_confirmation_decisions: dict[UUID, bool] = {}
+        app.state.committee_confirmations = {}  # dict[UUID, threading.Event]
+        app.state.committee_confirmation_decisions = {}  # dict[UUID, bool]
         # Keeps a strong reference to every in-flight job task -- asyncio
         # only guarantees a fire-and-forget task survives if something else
         # holds onto it, otherwise it can be garbage-collected mid-run.
-        app.state.committee_job_tasks: set[asyncio.Task] = set()
+        app.state.committee_job_tasks = set()  # set[asyncio.Task]
         yield
         app.state.db.close()
 
@@ -1759,14 +1761,14 @@ def _resolve_portfolio_and_date(
     return portfolio, parsed_date
 
 
-def _resolve_account_type(portfolio: PortfolioRow) -> str:
+def _resolve_account_type(portfolio: PortfolioRow) -> AccountType:
     # portfolio[3] is account_type, stored free-text at creation time (S1);
     # a value outside P1's canonical AccountType would otherwise fail deep
     # inside Position construction with a raw ValidationError.
     account_type = portfolio[3]
     if account_type not in get_args(AccountType):
         return "regular"
-    return account_type
+    return cast(AccountType, account_type)
 
 
 def _require_manual_position(
@@ -1833,6 +1835,7 @@ def _sync_manual_market_value(connection: duckdb.DuckDBPyConnection, position: P
     # After a valuation changed: the stored value follows the latest one,
     # else the purchase price (#288).
     valuations = repository.list_manual_valuations(connection, position[0])
+    assert position[9] is not None  # a manual position always has its purchase price
     repository.set_market_value(
         connection, position[0], manual_market_value(position[8], position[9], valuations)
     )
@@ -1849,7 +1852,7 @@ def _to_valuation_out(valuation: ManualValuation, quantity: Decimal) -> ManualVa
 async def _build_manual_position(
     payload: PositionCreate,
     *,
-    account_type: str,
+    account_type: AccountType,
     market_value: Decimal,
     purchased_on: date_type,
     openfigi_client: OpenFigiClient | None,
@@ -1912,7 +1915,7 @@ async def _import_and_persist(
     portfolio: PortfolioRow,
     file_bytes: bytes,
     valuation_date: date_type,
-    account_type: str,
+    account_type: AccountType,
     registry: ParserRegistry,
     openfigi_client: OpenFigiClient | None,
     quote_currency_fetcher: Callable[[str], str | None],
@@ -2556,8 +2559,8 @@ def _to_committee_job_out(row: repository.CommitteeJobRow) -> CommitteeJobOut:
         )
     return CommitteeJobOut(
         job_id=job_id,
-        variant=variant,
-        status=status,
+        variant=cast(CommitteeVariant, variant),
+        status=cast(CommitteeJobStatus, status),
         created_at=created_at,
         finished_at=finished_at,
         cost_usd=cost_usd,
