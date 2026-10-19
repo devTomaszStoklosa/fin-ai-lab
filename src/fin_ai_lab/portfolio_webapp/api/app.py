@@ -1,20 +1,16 @@
 import asyncio
 import threading
-import zipfile
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import date as date_type
-from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import cast, get_args
+from typing import cast
 from uuid import UUID
 
 import duckdb
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, HTTPException
 from google.genai import errors as genai_errors
-from openpyxl.utils.exceptions import InvalidFileException
-from pydantic import ValidationError
 
 from fin_ai_lab.core.llm.client import CostTrackingLlmClient, LlmClient
 from fin_ai_lab.core.llm.embeddings import EmbeddingClient
@@ -22,9 +18,7 @@ from fin_ai_lab.core.llm.trace import TRACES_DIR
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.filings_rag.service import INDEX_PATH as FILINGS_INDEX_PATH
 from fin_ai_lab.filings_rag.service import PROMPTS_DIR as FILINGS_RAG_PROMPTS_DIR
-from fin_ai_lab.filings_rag.service import (
-    SavedIndexCache,
-)
+from fin_ai_lab.filings_rag.service import SavedIndexCache
 from fin_ai_lab.investment_committee.service import (
     BudgetGuard,
     CommitteeReport,
@@ -44,8 +38,20 @@ from fin_ai_lab.portfolio_webapp.aggregators import (
     resolve_value,
     validate_no_cycle,
 )
-from fin_ai_lab.portfolio_webapp.api import filings_rag, market_pulse, news_classifier, system
-from fin_ai_lab.portfolio_webapp.api.common import llm_unavailable
+from fin_ai_lab.portfolio_webapp.api import (
+    filings_rag,
+    imports,
+    market_pulse,
+    news_classifier,
+    portfolios,
+    positions,
+    system,
+)
+from fin_ai_lab.portfolio_webapp.api.common import (
+    get_db,
+    llm_unavailable,
+    position_row_to_domain,
+)
 from fin_ai_lab.portfolio_webapp.api.defaults import (
     BASE_CURRENCY,
     COMMITTEE_BUDGET_USD,
@@ -66,16 +72,12 @@ from fin_ai_lab.portfolio_webapp.api.defaults import (
     _fetch_daily_closes,
 )
 from fin_ai_lab.portfolio_webapp.api.deps import AppDeps
+from fin_ai_lab.portfolio_webapp.api.live_values import live_market_values
 from fin_ai_lab.portfolio_webapp.benchmark import BENCHMARKS, normalize_ticker
 from fin_ai_lab.portfolio_webapp.benchmark_builder import (
     BenchmarkNotFoundError,
     BenchmarkUnavailableError,
     build_benchmark,
-)
-from fin_ai_lab.portfolio_webapp.bossa_financial import (
-    FinancialHistory,
-    is_financial_history,
-    parse_financial_history,
 )
 from fin_ai_lab.portfolio_webapp.breakdowns import (
     BUILTIN_ASSET_CLASS,
@@ -85,12 +87,6 @@ from fin_ai_lab.portfolio_webapp.breakdowns import (
     BreakdownError,
     validate_parent,
 )
-from fin_ai_lab.portfolio_webapp.cash_operations import (
-    CashHistory,
-    CashOperationsError,
-    extract_xtb_cash_operations,
-)
-from fin_ai_lab.portfolio_webapp.closed_lots import ClosedLotsHistory, extract_xtb_closed_lots
 from fin_ai_lab.portfolio_webapp.dividend_forecast_builder import (
     DividendsFetcher,
     build_dividend_forecast,
@@ -103,21 +99,7 @@ from fin_ai_lab.portfolio_webapp.instrument_overrides_builder import (
 )
 from fin_ai_lab.portfolio_webapp.instruments import Identities, asset_assignments
 from fin_ai_lab.portfolio_webapp.instruments_builder import build_instruments, load_link_state
-from fin_ai_lab.portfolio_webapp.lots import (
-    OpenLot,
-    extract_xtb_open_lots,
-    lots_matching_quantity,
-)
-from fin_ai_lab.portfolio_webapp.manual_valuations import (
-    ManualValuation,
-    ValuationDateError,
-    validate_purchase_date,
-    validate_valuation_date,
-)
-from fin_ai_lab.portfolio_webapp.manual_valuations import (
-    market_value as manual_market_value,
-)
-from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow, SnapshotRow
+from fin_ai_lab.portfolio_webapp.repository import PortfolioRow, PositionRow
 from fin_ai_lab.portfolio_webapp.schemas import (
     AggregatorCreate,
     AggregatorOut,
@@ -136,57 +118,34 @@ from fin_ai_lab.portfolio_webapp.schemas import (
     ConfirmBudgetRequest,
     DividendForecastOut,
     DividendHistoryOut,
-    ImportResponse,
     InstrumentDetachIn,
     InstrumentLinkIn,
     InstrumentOwnerDataIn,
     InstrumentsOut,
-    ManualValuationIn,
-    ManualValuationOut,
     MetricsOut,
-    PortfolioCreate,
-    PortfolioOut,
-    PositionCreate,
-    PositionOut,
-    PositionPreviewOut,
-    ProposePreview,
     ReportOut,
     SharesOut,
-    SnapshotOut,
     ValuationOut,
 )
 from fin_ai_lab.portfolio_webapp.shares_builder import ALL_PORTFOLIOS_NAME, build_shares
-from fin_ai_lab.portfolio_webapp.traded_instruments_builder import identify_missing_listings
-from fin_ai_lab.portfolio_webapp.valuation import MissingFxRateError, fx_currency_code, fx_move
+from fin_ai_lab.portfolio_webapp.valuation import MissingFxRateError
 from fin_ai_lab.portfolio_webapp.valuation_builder import (
     DailyClosesFetcher,
-    FxSeriesClient,
     build_valuation,
 )
-from fin_ai_lab.portfolio_webapp.yahoo_ticker import position_yahoo_ticker
-from fin_ai_lab.portfolio_xray.canonical import AccountType, Portfolio, Position
+from fin_ai_lab.portfolio_xray.canonical import Portfolio, Position
 from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
-from fin_ai_lab.portfolio_xray.ledger import BossaTransaction, parse_bossa_csv
 from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
 from fin_ai_lab.portfolio_xray.metrics.price_history import (
     fetch_dividends,
     fetch_quote_currency,
     price_change_ratio,
-    to_yahoo_ticker,
 )
 from fin_ai_lab.portfolio_xray.metrics.weights import compute_weights
-from fin_ai_lab.portfolio_xray.parsers.config import ParserConfig
-from fin_ai_lab.portfolio_xray.parsers.correction import (
-    CorrectionLoopError,
-    propose_and_validate_config,
-)
-from fin_ai_lab.portfolio_xray.parsers.reader import read_xlsx_sheets
 from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
-from fin_ai_lab.portfolio_xray.privacy.injection import flag_suspicious_cells
 from fin_ai_lab.portfolio_xray.report.builder import ReportRejectedError, build_report
 from fin_ai_lab.portfolio_xray.report.models import InstrumentMetadata, MetricsJson
 from fin_ai_lab.portfolio_xray.sectors.classifier import classify_sector
-from fin_ai_lab.portfolio_xray.service import build_bossa_import_result, import_file
 
 
 def create_app(
@@ -313,429 +272,29 @@ def create_app(
         dividends_fetcher=dividends_fetcher,
         benchmark_closes_fetcher=benchmark_closes_fetcher,
     )
-    for build in (system, market_pulse, news_classifier, filings_rag):
+    for build in (
+        system,
+        market_pulse,
+        news_classifier,
+        filings_rag,
+        portfolios,
+        imports,
+        positions,
+    ):
         app.include_router(build.build_router(deps))
-
-    @app.get("/api/portfolios", response_model=list[PortfolioOut])
-    def list_portfolios(
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> list[PortfolioOut]:
-        return [_to_portfolio_out(row) for row in repository.list_portfolios(connection)]
-
-    @app.post("/api/portfolios", response_model=PortfolioOut, status_code=201)
-    def create_portfolio(
-        payload: PortfolioCreate,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> PortfolioOut:
-        row = repository.create_portfolio(
-            connection,
-            name=payload.name,
-            broker=payload.broker,
-            account_type=payload.account_type,
-        )
-        return _to_portfolio_out(row)
-
-    @app.delete("/api/portfolios/{portfolio_id}", status_code=204)
-    def delete_portfolio(
-        portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> None:
-        if repository.get_portfolio(connection, portfolio_id) is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-        repository.delete_portfolio(connection, portfolio_id)
-
-    @app.post(
-        "/api/portfolios/{portfolio_id}/import",
-        response_model=ImportResponse,
-        status_code=201,
-    )
-    async def import_portfolio_file(
-        portfolio_id: UUID,
-        file: UploadFile = File(...),
-        valuation_date: str = Form(...),
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> ImportResponse:
-        portfolio, parsed_date = _resolve_portfolio_and_date(
-            connection, portfolio_id, valuation_date
-        )
-        return await _import_and_persist(
-            connection,
-            portfolio_id=portfolio_id,
-            portfolio=portfolio,
-            file_bytes=await file.read(),
-            valuation_date=parsed_date,
-            account_type=_resolve_account_type(portfolio),
-            registry=parser_registry_factory(),
-            openfigi_client=openfigi_client_factory(),
-            quote_currency_fetcher=quote_currency_fetcher,
-        )
-
-    @app.post(
-        "/api/portfolios/{portfolio_id}/import/bossa",
-        response_model=ImportResponse,
-        status_code=201,
-    )
-    async def import_bossa_portfolio_file(
-        portfolio_id: UUID,
-        file: UploadFile = File(...),
-        valuation_date: str = Form(...),
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> ImportResponse:
-        # Bossa has two known export shapes -- a transaction ledger (hisPW)
-        # and the financial history (#246) -- both turning into the same
-        # stored trades, neither a position snapshot: no propose/approve
-        # step, unlike XTB and any other row-mapped broker.
-        portfolio, parsed_date = _resolve_portfolio_and_date(
-            connection, portfolio_id, valuation_date
-        )
-
-        file_bytes = await file.read()
-        history: FinancialHistory | None = None
-        try:
-            if is_financial_history(file_bytes):
-                history = parse_financial_history(file_bytes)
-                new_transactions = history.transactions
-            else:
-                new_transactions = parse_bossa_csv(file_bytes)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422, detail={"errors": [str(exc)], "warnings": []}
-            ) from exc
-
-        injection_warnings = _flag_bossa_injection_warnings(new_transactions)
-        cash_operations_added: int | None = None
-        if history is not None:
-            repository.insert_financial_history_trades(
-                connection,
-                portfolio_id=portfolio_id,
-                broker="bossa",
-                transactions=new_transactions,
-            )
-            cash_operations_added = repository.insert_cash_operations(
-                connection, portfolio_id=portfolio_id, operations=history.operations
-            )
-            injection_warnings = injection_warnings + _financial_history_warnings(history)
-        else:
-            repository.insert_transactions(
-                connection,
-                portfolio_id=portfolio_id,
-                broker="bossa",
-                transactions=new_transactions,
-            )
-        # Positions always come from replaying the complete stored ledger,
-        # never from just the file that was just uploaded (REQ-021) -- an
-        # earlier import's holdings must not disappear just because the
-        # latest file only covers a later date range.
-        all_transactions = repository.list_transactions(connection, portfolio_id)
-        openfigi_client = openfigi_client_factory()
-        # Every traded ISIN, sold ones included, gets the listing the value
-        # history prices it by (#277) -- held positions alone would leave
-        # everything sold at a constant value.
-        if openfigi_client is not None:
-            injection_warnings = injection_warnings + await identify_missing_listings(
-                connection, all_transactions, openfigi_client, quote_currency_fetcher
-            )
-
-        result = await build_bossa_import_result(
-            all_transactions,
-            account_type=_resolve_account_type(portfolio),
-            valuation_date=parsed_date,
-            openfigi_client=openfigi_client,
-            # Bossa trades on the Warsaw Stock Exchange; "PW" is OpenFIGI's
-            # real exchange code for it (same one already used for XTB's own
-            # Polish listings), not a guess.
-            broker_market="PW",
-            quote_currency_fetcher=quote_currency_fetcher,
-            fx_client=fx_client_factory(),
-        )
-        if result.errors:
-            raise HTTPException(
-                status_code=422,
-                detail={"errors": result.errors, "warnings": result.warnings + injection_warnings},
-            )
-
-        response = _persist_snapshot_and_positions(
-            connection,
-            portfolio_id=portfolio_id,
-            broker="bossa",
-            valuation_date=parsed_date,
-            positions=result.positions,
-            warnings=result.warnings + injection_warnings,
-        )
-        response.cash_operations_added = cash_operations_added
-        return response
-
-    @app.post(
-        "/api/portfolios/{portfolio_id}/import/propose",
-        response_model=ProposePreview,
-    )
-    async def propose_import_config(
-        portfolio_id: UUID,
-        file: UploadFile = File(...),
-        broker: str = Form(...),
-        valuation_date: str = Form(...),
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> ProposePreview:
-        portfolio, parsed_date = _resolve_portfolio_and_date(
-            connection, portfolio_id, valuation_date
-        )
-        account_type = _resolve_account_type(portfolio)
-
-        try:
-            sheets = read_xlsx_sheets(await file.read())
-        except (zipfile.BadZipFile, InvalidFileException) as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={"errors": [f"Unreadable file: {exc}"], "warnings": []},
-            ) from exc
-
-        warnings = _flag_injection_warnings(sheets)
-
-        try:
-            config, positions = await propose_and_validate_config(
-                llm_client_factory(),
-                app.state.prompt_registry,
-                MODEL,
-                sheets,
-                broker=broker,
-                version=parser_registry_factory().next_version(broker),
-                account_type=account_type,
-                market_currency="PLN",
-                valuation_date=parsed_date,
-            )
-        except CorrectionLoopError as exc:
-            raise HTTPException(
-                status_code=422, detail={"errors": [str(exc)], "warnings": warnings}
-            ) from exc
-
-        # Nothing saved yet -- no registry.save(), no snapshot, no positions
-        # in the database. That only happens on /approve.
-        return ProposePreview(
-            config=config,
-            positions=[_to_position_preview(p) for p in positions],
-            warnings=warnings,
-        )
-
-    @app.post(
-        "/api/portfolios/{portfolio_id}/import/approve",
-        response_model=ImportResponse,
-        status_code=201,
-    )
-    async def approve_import_config(
-        portfolio_id: UUID,
-        file: UploadFile = File(...),
-        config: str = Form(...),
-        valuation_date: str = Form(...),
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> ImportResponse:
-        portfolio, parsed_date = _resolve_portfolio_and_date(
-            connection, portfolio_id, valuation_date
-        )
-
-        try:
-            parsed_config = ParserConfig.model_validate_json(config)
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=422, detail={"errors": [str(exc)], "warnings": []}
-            ) from exc
-
-        # Only now does the config become permanent -- registry.save() never
-        # overwrites an existing version file, so this is additive even if
-        # called more than once for the same proposal.
-        registry = parser_registry_factory()
-        registry.save(parsed_config)
-
-        return await _import_and_persist(
-            connection,
-            portfolio_id=portfolio_id,
-            portfolio=portfolio,
-            file_bytes=await file.read(),
-            valuation_date=parsed_date,
-            account_type=_resolve_account_type(portfolio),
-            registry=registry,
-            openfigi_client=openfigi_client_factory(),
-            quote_currency_fetcher=quote_currency_fetcher,
-        )
-
-    @app.get("/api/portfolios/{portfolio_id}/snapshots", response_model=list[SnapshotOut])
-    async def list_snapshots(
-        portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> list[SnapshotOut]:
-        if repository.get_portfolio(connection, portfolio_id) is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-
-        result: list[SnapshotOut] = []
-        for index, row in enumerate(repository.list_snapshots(connection, portfolio_id)):
-            position_rows = repository.list_positions(connection, row[0])
-            # Only the latest snapshot (index 0) represents "now" in the UI
-            # -- older ones are history (S7) and keep showing what they
-            # showed at import time, so only this one's positions get a
-            # live-refreshed value (issue #190).
-            if index == 0:
-                live_values = await _live_market_values(
-                    [_position_row_to_domain(p) for p in position_rows],
-                    price_ratio_fetcher,
-                    fx_client_factory(),
-                    today_provider(),
-                )
-                positions = [
-                    _to_position_out(p, live_market_value=live_value)
-                    for p, live_value in zip(position_rows, live_values, strict=True)
-                ]
-            else:
-                positions = [_to_position_out(p) for p in position_rows]
-            result.append(_to_snapshot_out(row, positions))
-        return result
-
-    @app.get("/api/portfolios/{portfolio_id}/positions", response_model=list[PositionOut])
-    def list_manual_positions(
-        portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> list[PositionOut]:
-        if repository.get_portfolio(connection, portfolio_id) is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-
-        snapshot = repository.find_manual_snapshot(connection, portfolio_id)
-        if snapshot is None:
-            return []
-        return [_to_position_out(row) for row in repository.list_positions(connection, snapshot[0])]
-
-    @app.post(
-        "/api/portfolios/{portfolio_id}/positions", response_model=PositionOut, status_code=201
-    )
-    async def create_manual_position(
-        portfolio_id: UUID,
-        payload: PositionCreate,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> PositionOut:
-        portfolio = repository.get_portfolio(connection, portfolio_id)
-        if portfolio is None:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
-
-        purchased_on = payload.purchased_on or today_provider()
-        _check_dates(validate_purchase_date, purchased_on, [], today_provider())
-        # Valued at cost on creation: no valuation exists yet (#288).
-        position = await _build_manual_position(
-            payload,
-            account_type=_resolve_account_type(portfolio),
-            market_value=manual_market_value(payload.quantity, payload.avg_cost, []),
-            purchased_on=purchased_on,
-            openfigi_client=openfigi_client_factory(),
-            quote_currency_fetcher=quote_currency_fetcher,
-        )
-        snapshot = repository.get_or_create_manual_snapshot(connection, portfolio_id)
-        row = repository.insert_position(connection, snapshot_id=snapshot[0], position=position)
-        return _to_position_out(row)
-
-    @app.put("/api/portfolios/{portfolio_id}/positions/{position_id}", response_model=PositionOut)
-    async def update_manual_position(
-        portfolio_id: UUID,
-        position_id: UUID,
-        payload: PositionCreate,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> PositionOut:
-        portfolio = _require_manual_position(connection, portfolio_id, position_id)
-        stored = repository.get_position(connection, position_id)
-        assert stored is not None
-        valuations = repository.list_manual_valuations(connection, position_id)
-        purchased_on = payload.purchased_on or stored[13]
-        _check_dates(validate_purchase_date, purchased_on, valuations, today_provider())
-
-        # The value follows the owner's valuations (#288), per unit -- a new
-        # quantity scales it, a new purchase price matters only without one.
-        position = await _build_manual_position(
-            payload,
-            account_type=_resolve_account_type(portfolio),
-            market_value=manual_market_value(payload.quantity, payload.avg_cost, valuations),
-            purchased_on=purchased_on,
-            openfigi_client=openfigi_client_factory(),
-            quote_currency_fetcher=quote_currency_fetcher,
-        )
-        row = repository.update_position(connection, position_id=position_id, position=position)
-        return _to_position_out(row)
-
-    @app.delete("/api/portfolios/{portfolio_id}/positions/{position_id}", status_code=204)
-    def delete_manual_position(
-        portfolio_id: UUID,
-        position_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> None:
-        _require_manual_position(connection, portfolio_id, position_id)
-        repository.delete_position(connection, position_id)
-
-    @app.get(
-        "/api/portfolios/{portfolio_id}/positions/{position_id}/valuations",
-        response_model=list[ManualValuationOut],
-    )
-    def list_manual_valuations(
-        portfolio_id: UUID,
-        position_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> list[ManualValuationOut]:
-        _require_manual_position(connection, portfolio_id, position_id)
-        position = repository.get_position(connection, position_id)
-        assert position is not None
-        return [
-            _to_valuation_out(valuation, position[8])
-            for valuation in repository.list_manual_valuations(connection, position_id)
-        ]
-
-    @app.put(
-        "/api/portfolios/{portfolio_id}/positions/{position_id}/valuations/{valued_on}",
-        response_model=ManualValuationOut,
-    )
-    def save_manual_valuation(
-        portfolio_id: UUID,
-        position_id: UUID,
-        valued_on: date_type,
-        payload: ManualValuationIn,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> ManualValuationOut:
-        # PUT on the day itself: a second valuation of the same day replaces
-        # the first, the same request twice changes nothing more (#288).
-        _require_manual_position(connection, portfolio_id, position_id)
-        position = repository.get_position(connection, position_id)
-        assert position is not None
-        _check_dates(validate_valuation_date, valued_on, position[13], today_provider())
-
-        valuation = ManualValuation(valued_on=valued_on, unit_value=payload.unit_value)
-        repository.save_manual_valuation(connection, position_id, valuation)
-        _sync_manual_market_value(connection, position)
-        return _to_valuation_out(valuation, position[8])
-
-    @app.delete(
-        "/api/portfolios/{portfolio_id}/positions/{position_id}/valuations/{valued_on}",
-        status_code=204,
-    )
-    def delete_manual_valuation(
-        portfolio_id: UUID,
-        position_id: UUID,
-        valued_on: date_type,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
-    ) -> None:
-        _require_manual_position(connection, portfolio_id, position_id)
-        position = repository.get_position(connection, position_id)
-        assert position is not None
-        valuations = repository.list_manual_valuations(connection, position_id)
-        if all(valuation.valued_on != valued_on for valuation in valuations):
-            raise HTTPException(status_code=404, detail="Valuation not found")
-
-        repository.delete_manual_valuation(connection, position_id, valued_on)
-        _sync_manual_market_value(connection, position)
 
     @app.get("/api/portfolios/{portfolio_id}/metrics", response_model=MetricsOut)
     async def get_metrics(
         portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> MetricsOut:
         if repository.get_portfolio(connection, portfolio_id) is None:
             raise HTTPException(status_code=404, detail="Portfolio not found")
 
         rows = _current_position_rows(connection, portfolio_id)
         fx_client = fx_client_factory()
-        positions = [_position_row_to_domain(row) for row in rows]
-        live_values = await _live_market_values(
+        positions = [position_row_to_domain(row) for row in rows]
+        live_values = await live_market_values(
             positions, price_ratio_fetcher, fx_client, today_provider()
         )
         positions_with_base_value = []
@@ -783,7 +342,7 @@ def create_app(
     @app.get("/api/valuation", response_model=ValuationOut)
     async def get_all_portfolios_valuation(
         refresh: bool = False,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> ValuationOut:
         # Every portfolio on one day axis -- the start page's sum and chart.
         return await build_valuation(
@@ -799,7 +358,7 @@ def create_app(
     async def get_portfolio_valuation(
         portfolio_id: UUID,
         refresh: bool = False,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> ValuationOut:
         portfolio = repository.get_portfolio(connection, portfolio_id)
         if portfolio is None:
@@ -859,7 +418,7 @@ def create_app(
 
     @app.get("/api/dividends/history", response_model=DividendHistoryOut)
     async def get_all_portfolios_dividend_history(
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> DividendHistoryOut:
         # #265: every portfolio together -- the start page's dividends card.
         return await build_dividend_history(
@@ -872,7 +431,7 @@ def create_app(
     @app.get("/api/portfolios/{portfolio_id}/dividends/history", response_model=DividendHistoryOut)
     async def get_portfolio_dividend_history(
         portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> DividendHistoryOut:
         portfolio = repository.get_portfolio(connection, portfolio_id)
         if portfolio is None:
@@ -898,7 +457,7 @@ def create_app(
     # while the history comes from the database alone and shows at once.
     @app.get("/api/dividends/forecast", response_model=DividendForecastOut)
     async def get_all_portfolios_dividend_forecast(
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> DividendForecastOut:
         return await _dividend_forecast(connection, repository.list_portfolios(connection))
 
@@ -907,7 +466,7 @@ def create_app(
     )
     async def get_portfolio_dividend_forecast(
         portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> DividendForecastOut:
         portfolio = repository.get_portfolio(connection, portfolio_id)
         if portfolio is None:
@@ -916,7 +475,7 @@ def create_app(
 
     @app.get("/api/breakdowns", response_model=list[BreakdownOut])
     def list_breakdowns(
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> list[BreakdownOut]:
         identities = load_link_state(connection).identities
         return [_to_breakdown_out(b, identities) for b in repository.list_breakdowns(connection)]
@@ -924,7 +483,7 @@ def create_app(
     @app.post("/api/breakdowns", response_model=BreakdownOut, status_code=201)
     def create_breakdown(
         payload: BreakdownCreate,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> BreakdownOut:
         return _to_breakdown_out(
             repository.create_breakdown(connection, name=payload.name), _identities(connection)
@@ -934,7 +493,7 @@ def create_app(
     def update_breakdown(
         breakdown_id: UUID,
         payload: BreakdownUpdate,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> BreakdownOut:
         _require_breakdown(connection, breakdown_id)
         updated = repository.update_breakdown(
@@ -945,7 +504,7 @@ def create_app(
     @app.delete("/api/breakdowns/{breakdown_id}", status_code=204)
     def delete_breakdown(
         breakdown_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> None:
         _require_breakdown(connection, breakdown_id)
         repository.delete_breakdown(connection, breakdown_id)
@@ -955,7 +514,7 @@ def create_app(
     )
     def duplicate_breakdown(
         breakdown_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> BreakdownOut:
         source = _require_breakdown(connection, breakdown_id)
         name = f"{source.name} (kopia)"[:100]
@@ -966,7 +525,7 @@ def create_app(
     def create_breakdown_group(
         breakdown_id: UUID,
         payload: BreakdownGroupIn,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> BreakdownOut:
         breakdown = _require_breakdown(connection, breakdown_id)
         _validate_parent(None, payload.parent_id, breakdown)
@@ -982,7 +541,7 @@ def create_app(
         breakdown_id: UUID,
         group_id: UUID,
         payload: BreakdownGroupIn,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> BreakdownOut:
         breakdown = _require_breakdown(connection, breakdown_id)
         _require_group(breakdown, group_id)
@@ -998,7 +557,7 @@ def create_app(
     def delete_breakdown_group(
         breakdown_id: UUID,
         group_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> BreakdownOut:
         breakdown = _require_breakdown(connection, breakdown_id)
         _require_group(breakdown, group_id)
@@ -1011,7 +570,7 @@ def create_app(
     def set_breakdown_assignment(
         breakdown_id: UUID,
         payload: AssignmentIn,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> BreakdownOut:
         breakdown = _require_breakdown(connection, breakdown_id)
         if payload.group_id is not None and all(g.id != payload.group_id for g in breakdown.groups):
@@ -1033,7 +592,7 @@ def create_app(
     async def get_shares(
         breakdown: str = BUILTIN_ASSET_CLASS,
         portfolio_id: UUID | None = None,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> SharesOut:
         # One portfolio, or every portfolio when portfolio_id is left out --
         # the same two scopes as the valuation endpoints.
@@ -1086,14 +645,14 @@ def create_app(
 
     @app.get("/api/instruments", response_model=InstrumentsOut)
     async def get_instruments(
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> InstrumentsOut:
         return await instruments_out(connection)
 
     @app.post("/api/instruments/links", response_model=InstrumentsOut)
     async def decide_instrument_link(
         payload: InstrumentLinkIn,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> InstrumentsOut:
         # REQ-091: the owner's answer for one pair -- "the same" joins them
         # into one asset, "different" keeps them apart for good (even with a
@@ -1112,7 +671,7 @@ def create_app(
     @app.post("/api/instruments/detach", response_model=InstrumentsOut)
     async def detach_instrument(
         payload: InstrumentDetachIn,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> InstrumentsOut:
         # REQ-094: takes one instrument out of its asset; the rest of the
         # asset stays joined, even where only this one linked them.
@@ -1137,7 +696,7 @@ def create_app(
     @app.post("/api/instruments/owner-data", response_model=InstrumentsOut)
     async def save_instrument_owner_data(
         payload: InstrumentOwnerDataIn,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> InstrumentsOut:
         # #285: the owner's own Yahoo symbol and quote currency for one held
         # instrument; both empty clears the entry. A manual position is the
@@ -1187,7 +746,7 @@ def create_app(
     @app.get("/api/portfolios/{portfolio_id}/aggregators", response_model=list[AggregatorOut])
     async def list_portfolio_aggregators(
         portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> list[AggregatorOut]:
         if repository.get_portfolio(connection, portfolio_id) is None:
             raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -1207,7 +766,7 @@ def create_app(
     async def create_portfolio_aggregator(
         portfolio_id: UUID,
         payload: AggregatorCreate,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> AggregatorOut:
         if repository.get_portfolio(connection, portfolio_id) is None:
             raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -1235,7 +794,7 @@ def create_app(
         portfolio_id: UUID,
         aggregator_id: UUID,
         payload: AggregatorCreate,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> AggregatorOut:
         _require_own_aggregator(connection, portfolio_id, aggregator_id)
         _require_existing_aggregators(connection, portfolio_id, payload.member_aggregator_ids)
@@ -1267,7 +826,7 @@ def create_app(
     def delete_portfolio_aggregator(
         portfolio_id: UUID,
         aggregator_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> None:
         _require_own_aggregator(connection, portfolio_id, aggregator_id)
         repository.delete_aggregator(connection, aggregator_id)
@@ -1278,7 +837,7 @@ def create_app(
     )
     def get_cached_report(
         portfolio_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> ReportOut | None:
         if repository.get_portfolio(connection, portfolio_id) is None:
             raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -1294,7 +853,7 @@ def create_app(
     async def generate_portfolio_report(
         portfolio_id: UUID,
         regenerate: bool = False,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> ReportOut:
         if repository.get_portfolio(connection, portfolio_id) is None:
             raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -1312,7 +871,7 @@ def create_app(
                     return _to_report_out(cached)
 
             rows = _current_position_rows(connection, portfolio_id)
-            positions = [_position_row_to_domain(row) for row in rows]
+            positions = [position_row_to_domain(row) for row in rows]
             fx_client = fx_client_factory()
             positions_with_base_value = [
                 (position, await _base_currency_value(position, fx_client))
@@ -1381,7 +940,7 @@ def create_app(
     async def start_committee_analysis(
         portfolio_id: UUID,
         payload: CommitteeAnalysisRequest,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> CommitteeJobOut:
         if repository.get_portfolio(connection, portfolio_id) is None:
             raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -1399,7 +958,7 @@ def create_app(
                 return _to_committee_job_out(cached)
 
         rows = _current_position_rows(connection, portfolio_id)
-        positions = [_position_row_to_domain(row) for row in rows]
+        positions = [position_row_to_domain(row) for row in rows]
         portfolio = Portfolio(positions=positions, valuation_date=valuation_date)
 
         job_row = repository.create_committee_job(
@@ -1426,7 +985,7 @@ def create_app(
     def get_committee_analysis_job(
         portfolio_id: UUID,
         job_id: UUID,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> CommitteeJobOut:
         job_row = repository.get_committee_job(connection, job_id)
         if job_row is None or job_row[1] != portfolio_id:
@@ -1441,7 +1000,7 @@ def create_app(
         portfolio_id: UUID,
         job_id: UUID,
         payload: ConfirmBudgetRequest,
-        connection: duckdb.DuckDBPyConnection = Depends(_get_db),
+        connection: duckdb.DuckDBPyConnection = Depends(get_db),
     ) -> CommitteeJobOut:
         job_row = repository.get_committee_job(connection, job_id)
         if job_row is None or job_row[1] != portfolio_id:
@@ -1591,49 +1150,6 @@ def create_app(
     return app
 
 
-def _resolve_portfolio_and_date(
-    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID, valuation_date: str
-) -> tuple[PortfolioRow, date_type]:
-    portfolio = repository.get_portfolio(connection, portfolio_id)
-    if portfolio is None:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
-
-    try:
-        parsed_date = date_type.fromisoformat(valuation_date)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail={"errors": [str(exc)], "warnings": []}) from exc
-
-    return portfolio, parsed_date
-
-
-def _resolve_account_type(portfolio: PortfolioRow) -> AccountType:
-    # portfolio[3] is account_type, stored free-text at creation time (S1);
-    # a value outside P1's canonical AccountType would otherwise fail deep
-    # inside Position construction with a raw ValidationError.
-    account_type = portfolio[3]
-    if account_type not in get_args(AccountType):
-        return "regular"
-    return cast(AccountType, account_type)
-
-
-def _require_manual_position(
-    connection: duckdb.DuckDBPyConnection, portfolio_id: UUID, position_id: UUID
-) -> PortfolioRow:
-    # 404s a position from a file import too (REQ-011 forbids editing it,
-    # and the frontend never offers the action for one) -- not a path real
-    # use reaches, just a defensive backstop.
-    portfolio = repository.get_portfolio(connection, portfolio_id)
-    if portfolio is None:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
-
-    manual_snapshot = repository.find_manual_snapshot(connection, portfolio_id)
-    position = repository.get_position(connection, position_id)
-    if position is None or manual_snapshot is None or position[1] != manual_snapshot[0]:
-        raise HTTPException(status_code=404, detail="Position not found")
-
-    return portfolio
-
-
 def _current_position_rows(
     connection: duckdb.DuckDBPyConnection, portfolio_id: UUID
 ) -> list[PositionRow]:
@@ -1668,511 +1184,6 @@ def _current_reporting_context(
     return None
 
 
-def _check_dates(rule: Callable[..., None], *args: object) -> None:
-    # A date the owner can fix (#288) -- 422 with the rule's own message.
-    try:
-        rule(*args)
-    except ValuationDateError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-def _sync_manual_market_value(connection: duckdb.DuckDBPyConnection, position: PositionRow) -> None:
-    # After a valuation changed: the stored value follows the latest one,
-    # else the purchase price (#288).
-    valuations = repository.list_manual_valuations(connection, position[0])
-    assert position[9] is not None  # a manual position always has its purchase price
-    repository.set_market_value(
-        connection, position[0], manual_market_value(position[8], position[9], valuations)
-    )
-
-
-def _to_valuation_out(valuation: ManualValuation, quantity: Decimal) -> ManualValuationOut:
-    return ManualValuationOut(
-        valued_on=valuation.valued_on,
-        unit_value=valuation.unit_value,
-        value=(quantity * valuation.unit_value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-    )
-
-
-async def _build_manual_position(
-    payload: PositionCreate,
-    *,
-    account_type: AccountType,
-    market_value: Decimal,
-    purchased_on: date_type,
-    openfigi_client: OpenFigiClient | None,
-    quote_currency_fetcher: Callable[[str], str | None],
-) -> Position:
-    position = Position(
-        broker=repository.MANUAL_BROKER,
-        account_type=account_type,
-        instrument_name=payload.instrument_name,
-        isin=payload.isin,
-        symbol=payload.symbol,
-        asset_class=payload.asset_class,
-        quantity=payload.quantity,
-        avg_cost=payload.avg_cost,
-        cost_currency="PLN",
-        market_value=market_value,
-        market_currency="PLN",
-        valuation_date=purchased_on,
-    )
-    return await _resolve_manual_identification(position, openfigi_client, quote_currency_fetcher)
-
-
-async def _resolve_manual_identification(
-    position: Position,
-    openfigi_client: OpenFigiClient | None,
-    quote_currency_fetcher: Callable[[str], str | None],
-) -> Position:
-    # Mirrors service.py's own (module-private) _resolve_identifications for
-    # a single position -- same reasoning as _flag_injection_warnings: that
-    # function is P1-private, portfolio_webapp may only reach its public
-    # surface (docs/ARCHITECTURE.md rule 6).
-    if openfigi_client is None or position.isin is None:
-        return position
-    identification = await openfigi_client.resolve_by_isin(position.isin, "PLN", None)
-    quote_currency = None
-    if identification.ticker is not None:
-        yfinance_ticker = to_yahoo_ticker(identification.ticker, identification.exchange_code)
-        try:
-            quote_currency = await asyncio.to_thread(quote_currency_fetcher, yfinance_ticker)
-        except Exception:
-            # yfinance is unofficial and sometimes blocked (docs/DATA-SOURCES.md)
-            # -- a failed lookup must not break saving the position.
-            quote_currency = None
-    return position.model_copy(
-        update={
-            "resolution_status": identification.status,
-            "figi": identification.figi,
-            "ticker": identification.ticker,
-            "exchange_code": identification.exchange_code,
-            "identification_rule": identification.identification_rule,
-            "quote_currency": quote_currency,
-        }
-    )
-
-
-async def _import_and_persist(
-    connection: duckdb.DuckDBPyConnection,
-    *,
-    portfolio_id: UUID,
-    portfolio: PortfolioRow,
-    file_bytes: bytes,
-    valuation_date: date_type,
-    account_type: AccountType,
-    registry: ParserRegistry,
-    openfigi_client: OpenFigiClient | None,
-    quote_currency_fetcher: Callable[[str], str | None],
-) -> ImportResponse:
-    """Shared by /import and /import/approve -- once a registry that already
-    recognizes the file's format is in hand (built-in for /import, just
-    saved for /approve), the rest (parse, persist snapshot + positions) is
-    identical."""
-    try:
-        result = await import_file(
-            file_bytes,
-            valuation_date=valuation_date,
-            account_type=account_type,
-            market_currency="PLN",
-            registry=registry,
-            openfigi_client=openfigi_client,
-            quote_currency_fetcher=quote_currency_fetcher,
-        )
-    except (zipfile.BadZipFile, InvalidFileException) as exc:
-        # A CLI user already picked a file they know is an XTB export; a
-        # browser upload has no such guarantee, so unlike the CLI (which
-        # lets this propagate) the API turns "not actually a spreadsheet"
-        # into the same clean error shape as an unmatched-but-valid one.
-        raise HTTPException(
-            status_code=422,
-            detail={"errors": [f"Unreadable file: {exc}"], "warnings": []},
-        ) from exc
-
-    if result.errors:
-        raise HTTPException(
-            status_code=422,
-            detail={"errors": result.errors, "warnings": result.warnings},
-        )
-
-    # The snapshot's broker is what was actually parsed, not the portfolio's
-    # own broker label from S1 -- those can drift (e.g. mislabeled at
-    # creation). Falls back to the portfolio's label only when a "known
-    # format" import somehow yields zero positions.
-    broker = result.positions[0].broker if result.positions else (portfolio[2] or "unknown")
-    # Read before anything is written: a failure here must not leave a
-    # snapshot without its cash operations.
-    history, cash_warnings = _read_cash_history(file_bytes)
-    closed_lots, lots_warnings = _read_closed_lots(file_bytes)
-    response = _persist_snapshot_and_positions(
-        connection,
-        portfolio_id=portfolio_id,
-        broker=broker,
-        valuation_date=valuation_date,
-        positions=result.positions,
-        warnings=result.warnings + cash_warnings + lots_warnings,
-        lots=_extract_lots_best_effort(file_bytes, registry),
-    )
-    if history is not None:
-        response.cash_operations_added = repository.insert_cash_operations(
-            connection, portfolio_id=portfolio_id, operations=history.operations
-        )
-    if closed_lots is not None:
-        response.closed_lots_added = repository.insert_closed_lots(
-            connection, portfolio_id=portfolio_id, lots=closed_lots.lots
-        )
-    return response
-
-
-def _financial_history_warnings(history: FinancialHistory) -> list[str]:
-    """What the Bossa financial history could not use -- an unknown title
-    would otherwise silently leave money out of the investment result, and an
-    unreadable settlement row a trade out of the holdings."""
-    warnings = [
-        f"Historia finansowa: nieznany tytuł operacji „{title}” — pominięty."
-        for title in history.unknown_titles
-    ]
-    if history.unreadable_rows:
-        warnings.append(
-            f"Historia finansowa: {history.unreadable_rows} wierszy nie do odczytania — pominięte."
-        )
-    return warnings
-
-
-def _read_closed_lots(file_bytes: bytes) -> tuple[ClosedLotsHistory | None, list[str]]:
-    """The XTB Closed Positions sheet, with a warning for every lot it could
-    not use: a lot left out of the holdings history understates the days it
-    was held."""
-    try:
-        history = extract_xtb_closed_lots(file_bytes)
-    except CashOperationsError as exc:
-        return None, [f"Closed Positions nie zaimportowane: {exc}"]
-    if history is None:
-        return None, []
-    warnings: list[str] = []
-    if history.skipped_short:
-        warnings.append(
-            f"Closed Positions: {history.skipped_short} pozycji krótkich (SELL) pominiętych "
-            "w historii wartości."
-        )
-    if history.skipped_unpriced:
-        warnings.append(
-            f"Closed Positions: {history.skipped_unpriced} pozycji bez wartości zakupu lub "
-            "sprzedaży (CFD, krypto) pominiętych w historii wartości."
-        )
-    if history.unreadable_rows:
-        warnings.append(
-            f"Closed Positions: {history.unreadable_rows} wierszy bez czasu otwarcia lub "
-            "zamknięcia — pominięte."
-        )
-    return history, warnings
-
-
-def _read_cash_history(file_bytes: bytes) -> tuple[CashHistory | None, list[str]]:
-    """The XTB Cash Operations sheet, with a warning for everything it could
-    not use -- an unknown type would otherwise silently leave money out of
-    the investment result."""
-    try:
-        history = extract_xtb_cash_operations(file_bytes)
-    except CashOperationsError as exc:
-        return None, [f"Cash Operations nie zaimportowane: {exc}"]
-    if history is None:
-        return None, []
-    warnings = [
-        f"Cash Operations: nieznany typ operacji „{op_type}” — pominięty w wyniku inwestycji."
-        for op_type in history.unknown_types
-    ]
-    if history.unreadable_rows:
-        warnings.append(
-            f"Cash Operations: {history.unreadable_rows} wierszy bez ID, daty lub kwoty "
-            "— pominięte."
-        )
-    return history, warnings
-
-
-def _extract_lots_best_effort(file_bytes: bytes, registry: ParserRegistry) -> list[OpenLot]:
-    # Lots only refine the value history's start (S10) -- a file P1 just
-    # imported fine must never fail on this extra read, so any surprise in
-    # the detail rows means "no lots", not a 500.
-    try:
-        return extract_xtb_open_lots(file_bytes, registry)
-    except Exception:
-        return []
-
-
-def _persist_snapshot_and_positions(
-    connection: duckdb.DuckDBPyConnection,
-    *,
-    portfolio_id: UUID,
-    broker: str,
-    valuation_date: date_type,
-    positions: list[Position],
-    warnings: list[str],
-    lots: list[OpenLot] | None = None,
-) -> ImportResponse:
-    """Shared by every import path (XTB, Bossa, and any future propose/approve
-    broker) once it has a resolved position list ready to store -- freshly
-    imported, so already "now", no live-refresh attempt needed."""
-    snapshot_row = repository.create_snapshot(
-        connection, portfolio_id=portfolio_id, broker=broker, valuation_date=valuation_date
-    )
-    repository.insert_positions(connection, snapshot_id=snapshot_row[0], positions=positions)
-    position_rows = repository.list_positions(connection, snapshot_row[0])
-    if lots:
-        # row[6] is symbol, row[8] quantity -- XTB lots are keyed by ticker,
-        # the same column P1 maps to Position.symbol.
-        quantity_by_symbol = {row[6]: row[8] for row in position_rows if row[6] is not None}
-        matched = lots_matching_quantity(lots, quantity_by_symbol)
-        for row in position_rows:
-            if row[6] in matched:
-                repository.insert_lots(connection, position_id=row[0], lots=matched[row[6]])
-    return ImportResponse(
-        snapshot=_to_snapshot_out(snapshot_row, [_to_position_out(p) for p in position_rows]),
-        warnings=warnings,
-    )
-
-
-def _flag_bossa_injection_warnings(transactions: list[BossaTransaction]) -> list[str]:
-    # Only instrument_name is genuine freeform text in a Bossa row (isin and
-    # currency are fixed-format codes) -- and it's exactly the field that
-    # survives into Position.instrument_name and, from there, into report
-    # prompts (REQ-004). Bossa's import had no such scan at all before this.
-    return flag_suspicious_cells([(t.instrument_name,) for t in transactions])
-
-
-def _flag_injection_warnings(sheets: dict[str, list[tuple[object, ...]]]) -> list[str]:
-    # Mirrors service.py's own (module-private) _flag_all_sheets exactly --
-    # duplicated rather than imported, since portfolio_webapp may only reach
-    # into P1's public functions (docs/ARCHITECTURE.md rule 6), and this is
-    # five lines built entirely from the public flag_suspicious_cells.
-    warnings: list[str] = []
-    for sheet_name, rows in sheets.items():
-        for flag in flag_suspicious_cells(rows):
-            warnings.append(f"{sheet_name}, {flag}")
-    return warnings
-
-
-def _get_db(request: Request) -> duckdb.DuckDBPyConnection:
-    # cursor(), not the shared connection directly: FastAPI runs sync
-    # endpoints in a threadpool, and concurrent execute() calls on one
-    # DuckDB connection from different threads corrupt each other's result
-    # rows (reproduced). cursor() shares the same database but is
-    # independent per call.
-    return request.app.state.db.cursor()
-
-
-def _to_portfolio_out(row: PortfolioRow) -> PortfolioOut:
-    id_, name, broker, account_type, created_at = row
-    return PortfolioOut(
-        id=id_, name=name, broker=broker, account_type=account_type, created_at=created_at
-    )
-
-
-def _to_position_out(row: PositionRow, *, live_market_value: Decimal | None = None) -> PositionOut:
-    (
-        id_,
-        _snapshot_id,
-        broker,
-        account_type,
-        instrument_name,
-        isin,
-        symbol,
-        asset_class,
-        quantity,
-        avg_cost,
-        cost_currency,
-        market_value,
-        market_currency,
-        valuation_date,
-        resolution_status,
-        figi,
-        ticker,
-        exchange_code,
-        identification_rule,
-        quote_currency,
-    ) = row
-    effective_market_value = market_value if live_market_value is None else live_market_value
-    return PositionOut(
-        id=id_,
-        broker=broker,
-        account_type=account_type,
-        instrument_name=instrument_name,
-        isin=isin,
-        symbol=symbol,
-        asset_class=asset_class,
-        quantity=quantity,
-        avg_cost=avg_cost,
-        cost_currency=cost_currency,
-        market_value=effective_market_value,
-        market_currency=market_currency,
-        valuation_date=valuation_date,
-        resolution_status=resolution_status,
-        figi=figi,
-        ticker=ticker,
-        exchange_code=exchange_code,
-        identification_rule=identification_rule,
-        quote_currency=quote_currency,
-        return_pct=_return_pct(
-            quantity=quantity,
-            avg_cost=avg_cost,
-            cost_currency=cost_currency,
-            market_value=effective_market_value,
-            market_currency=market_currency,
-        ),
-    )
-
-
-# Margin before an import date for its NBP rate: an import made on a
-# weekend or holiday is valued at the last rate published before it.
-_LIVE_FX_LOOKBACK = timedelta(days=10)
-
-
-async def _live_market_values(
-    positions: list[Position],
-    price_ratio_fetcher: Callable[[str, date_type], Decimal | None],
-    fx_client: FxSeriesClient,
-    today: date_type,
-) -> list[Decimal | None]:
-    # Price ratios first, exchange rates second: NBP is only asked about the
-    # currencies of positions that got a live price, once per request (#283).
-    ratios = [await _live_price_ratio(position, price_ratio_fetcher) for position in positions]
-    priced = [
-        position for position, ratio in zip(positions, ratios, strict=True) if ratio is not None
-    ]
-    fx_rates = await _live_fx_rates(priced, fx_client, today)
-    return [
-        None if ratio is None else _live_market_value(position, ratio, fx_rates, today)
-        for position, ratio in zip(positions, ratios, strict=True)
-    ]
-
-
-def _live_market_value(
-    position: Position,
-    ratio: Decimal,
-    fx_rates: dict[str, dict[date_type, Decimal]],
-    today: date_type,
-) -> Decimal:
-    # The price ratio applied to the already-stored (already-correct-
-    # currency) value -- the quote's own unit is never taken as the
-    # account's currency (#188). A listing quoted in another currency also
-    # moves with that currency's exchange rate since the import (#283),
-    # the same factor as the day-by-day valuation's.
-    assert position.market_value is not None  # _live_price_ratio checked it
-    value = position.market_value * ratio * _live_fx_move(position, fx_rates, today)
-    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def _live_fx_move(
-    position: Position, fx_rates: dict[str, dict[date_type, Decimal]], today: date_type
-) -> Decimal:
-    if position.market_currency is None:
-        return Decimal(1)
-    try:
-        return fx_move(
-            position.market_currency,
-            position.quote_currency,
-            position.valuation_date,
-            today,
-            fx_rates,
-        )
-    except MissingFxRateError:
-        # No NBP rates for the currency (see _live_fx_rates): only the
-        # exchange-rate factor is left out, the price move still counts --
-        # the same rule as valuation.unit_value_series.
-        return Decimal(1)
-
-
-async def _live_fx_rates(
-    positions: list[Position], fx_client: FxSeriesClient, today: date_type
-) -> dict[str, dict[date_type, Decimal]]:
-    # One NBP series per currency an exchange-rate factor needs. Same call
-    # as the day-by-day valuation's, so both share its on-disk cache and
-    # agree on today's rate. A currency NBP has no rates for, or a failed
-    # request, is simply left out.
-    start_by_currency: dict[str, date_type] = {}
-    for position in positions:
-        start = position.valuation_date - _LIVE_FX_LOOKBACK
-        for currency in _fx_move_currencies(position):
-            start_by_currency[currency] = min(start_by_currency.get(currency, start), start)
-
-    fx_rates: dict[str, dict[date_type, Decimal]] = {}
-    for currency, start in start_by_currency.items():
-        try:
-            fx_rates[currency] = await fx_client.mid_rate_series(currency, start, today)
-        except Exception:
-            # NBP down, or no table A/B rate for the currency -- a live
-            # value must still come back, moved by its price alone.
-            continue
-    return fx_rates
-
-
-def _fx_move_currencies(position: Position) -> set[str]:
-    if position.market_currency is None or position.quote_currency is None:
-        return set()
-    quote_code = fx_currency_code(position.quote_currency)
-    if quote_code == position.market_currency:
-        return set()
-    return {quote_code, position.market_currency} - {BASE_CURRENCY}
-
-
-async def _live_price_ratio(
-    position: Position, price_ratio_fetcher: Callable[[str, date_type], Decimal | None]
-) -> Decimal | None:
-    # Ratio of latest close to the close on the position's own valuation
-    # date. Manual positions are the owner's own explicit input, left
-    # untouched.
-    if position.broker == repository.MANUAL_BROKER:
-        return None
-    if position.market_value is None or position.quantity <= 0:
-        return None
-    yfinance_ticker = position_yahoo_ticker(
-        broker=position.broker,
-        symbol=position.symbol,
-        ticker=position.ticker,
-        exchange_code=position.exchange_code,
-    )
-    if yfinance_ticker is None:
-        return None
-
-    try:
-        return await asyncio.to_thread(
-            price_ratio_fetcher, yfinance_ticker, position.valuation_date
-        )
-    except Exception:
-        # yfinance is unofficial and sometimes blocked (docs/DATA-SOURCES.md)
-        # -- a live-refresh failure must fall back to the stored value, never
-        # break the page.
-        return None
-
-
-def _return_pct(
-    *,
-    quantity: Decimal,
-    avg_cost: Decimal | None,
-    cost_currency: str | None,
-    market_value: Decimal | None,
-    market_currency: str | None,
-) -> Decimal | None:
-    # Short/derivative positions (quantity <= 0) need a sign-aware formula --
-    # the naive one below would report a loss as a gain -- out of scope here.
-    if avg_cost is None or market_value is None or quantity <= 0:
-        return None
-    if cost_currency != market_currency:
-        return None
-
-    cost_basis = quantity * avg_cost
-    if cost_basis == 0:
-        return None
-
-    return ((market_value - cost_basis) / cost_basis * 100).quantize(
-        Decimal("0.1"), rounding=ROUND_HALF_UP
-    )
-
-
-def _position_row_to_domain(row: PositionRow) -> Position:
-    return repository.row_to_position(row)
-
-
 async def _base_currency_value(position: Position, fx_client: NbpFxClient) -> Decimal:
     # Mirrors report/orchestrator.py's own (module-private) _base_currency_value
     # -- same reasoning as _flag_injection_warnings: P1-private, portfolio_webapp
@@ -2193,7 +1204,7 @@ async def _instrument_values_by_key(
     # an aggregate is a grouping/display concern, not itself a live quote).
     values: dict[str, Decimal] = {}
     for row in _current_position_rows(connection, portfolio_id):
-        position = _position_row_to_domain(row)
+        position = position_row_to_domain(row)
         key = instrument_key(position)
         values[key] = values.get(key, Decimal(0)) + await _base_currency_value(position, fx_client)
     return values
@@ -2280,20 +1291,6 @@ def _as_percent(fraction: Decimal) -> Decimal:
     return (fraction * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
 
-def _to_position_preview(position: Position) -> PositionPreviewOut:
-    return PositionPreviewOut(
-        instrument_name=position.instrument_name,
-        isin=position.isin,
-        symbol=position.symbol,
-        asset_class=position.asset_class,
-        quantity=position.quantity,
-        avg_cost=position.avg_cost,
-        cost_currency=position.cost_currency,
-        market_value=position.market_value,
-        market_currency=position.market_currency,
-    )
-
-
 def _to_report_out(row: repository.ReportRow) -> ReportOut:
     id_, snapshot_id, generated_at, model, cost_usd, content_md = row
     return ReportOut(
@@ -2343,17 +1340,3 @@ def _committee_result_cost(result: CommitteeReport | ComparisonReport) -> Decima
     if isinstance(result, ComparisonReport):
         return result.single_agent.cost_usd + result.committee.cost_usd
     return result.cost_usd
-
-
-def _to_snapshot_out(row: SnapshotRow, positions: list[PositionOut]) -> SnapshotOut:
-    id_, portfolio_id, broker, valuation_date, imported_at, date_min, date_max = row
-    return SnapshotOut(
-        id=id_,
-        portfolio_id=portfolio_id,
-        broker=broker,
-        valuation_date=valuation_date,
-        imported_at=imported_at,
-        source_file_date_min=date_min,
-        source_file_date_max=date_max,
-        positions=positions,
-    )
