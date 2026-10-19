@@ -63,8 +63,13 @@ def test_count_calls_today_counts_a_failed_call_too(tmp_path: Path) -> None:
     now = datetime.now(UTC)
     sink.write(
         TraceSpan(
-            trace_id="t1", span_id="s1", ts=now, kind="llm", name="complete",
-            model="gemini-3.6-flash", error="ServerError: 503",
+            trace_id="t1",
+            span_id="s1",
+            ts=now,
+            kind="llm",
+            name="complete",
+            model="gemini-3.6-flash",
+            error="ServerError: 503",
         )
     )
 
@@ -83,14 +88,23 @@ def test_count_calls_today_counts_every_http_attempt_of_a_call(tmp_path: Path) -
     now = datetime.now(UTC)
     sink.write(
         TraceSpan(
-            trace_id="t1", span_id="s1", ts=now, kind="llm", name="complete",
-            model="gemini-3.6-flash", attempts=2,
+            trace_id="t1",
+            span_id="s1",
+            ts=now,
+            kind="llm",
+            name="complete",
+            model="gemini-3.6-flash",
+            attempts=2,
         )
     )
     # Older span, written before `attempts` existed -- counts as one request.
     sink.write(
         TraceSpan(
-            trace_id="t2", span_id="s2", ts=now, kind="llm", name="complete",
+            trace_id="t2",
+            span_id="s2",
+            ts=now,
+            kind="llm",
+            name="complete",
             model="gemini-3.6-flash",
         )
     )

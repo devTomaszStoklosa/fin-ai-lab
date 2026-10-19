@@ -23,9 +23,7 @@ async def retrieve(
 
     retrieved = [RetrievedChunk(chunk=chunk, score=score) for chunk, score in matches]
     top_score = retrieved[0].score if retrieved else 0.0
-    company_in_corpus = (
-        _mentions_known_company(query, known_companies) if known_companies else True
-    )
+    company_in_corpus = _mentions_known_company(query, known_companies) if known_companies else True
 
     return RetrievalResult(
         chunks=retrieved, top_score=top_score, company_in_corpus=company_in_corpus

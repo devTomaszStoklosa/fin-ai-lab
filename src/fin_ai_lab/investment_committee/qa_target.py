@@ -43,13 +43,25 @@ async def compare_committee_vs_single(
     subagent or the supervisor grade its own work)."""
     single_result = await _timed_run(
         run_single_agent(
-            portfolio, portfolio_id, fred_client, nbp_client, llm_client, prompt_registry, model,
+            portfolio,
+            portfolio_id,
+            fred_client,
+            nbp_client,
+            llm_client,
+            prompt_registry,
+            model,
             BudgetGuard(budget_usd=budget_usd, max_iterations=DEFAULT_MAX_ITERATIONS),
         )
     )
     committee_result = await _timed_run(
         run_committee(
-            portfolio, portfolio_id, fred_client, nbp_client, llm_client, prompt_registry, model,
+            portfolio,
+            portfolio_id,
+            fred_client,
+            nbp_client,
+            llm_client,
+            prompt_registry,
+            model,
             BudgetGuard(budget_usd=budget_usd, max_iterations=DEFAULT_MAX_ITERATIONS),
             fx_client=fx_client,
         )

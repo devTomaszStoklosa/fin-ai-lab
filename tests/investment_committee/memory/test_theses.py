@@ -12,9 +12,13 @@ def _portfolio(valuation_date: date) -> Portfolio:
         valuation_date=valuation_date,
         positions=[
             Position(
-                broker="xtb", account_type="regular", instrument_name="Orlen",
-                asset_class="equity", quantity=Decimal("10"),
-                market_value=Decimal("1000"), market_currency="PLN",
+                broker="xtb",
+                account_type="regular",
+                instrument_name="Orlen",
+                asset_class="equity",
+                quantity=Decimal("10"),
+                market_value=Decimal("1000"),
+                market_currency="PLN",
                 valuation_date=valuation_date,
             )
         ],

@@ -49,9 +49,7 @@ async def build_brief(
         if missing_sources
         else None
     )
-    text = "\n\n".join(
-        part for part in [header, us_text, pl_text, news_text, missing_line] if part
-    )
+    text = "\n\n".join(part for part in [header, us_text, pl_text, news_text, missing_line] if part)
 
     return Brief(
         date=date.today(),
@@ -78,8 +76,10 @@ async def _write_indicators_section(
     payload = json.dumps(_indicators_payload(indicators), ensure_ascii=False)
     rendered = prompt.render(indicators_json=payload)
     request = LlmRequest(
-        model=model, messages=[{"role": "user", "text": rendered}],
-        prompt_id=prompt_id, prompt_version=1,
+        model=model,
+        messages=[{"role": "user", "text": rendered}],
+        prompt_id=prompt_id,
+        prompt_version=1,
     )
     result = await llm_client.complete(request)
     return result.text
@@ -94,8 +94,10 @@ async def _write_news_section(
     prompt = prompt_registry.get("brief_news", 1)
     rendered = prompt.render(news_json=json.dumps(_news_payload(news), ensure_ascii=False))
     request = LlmRequest(
-        model=model, messages=[{"role": "user", "text": rendered}],
-        prompt_id="brief_news", prompt_version=1,
+        model=model,
+        messages=[{"role": "user", "text": rendered}],
+        prompt_id="brief_news",
+        prompt_version=1,
     )
     result = await llm_client.complete(request)
     return result.text

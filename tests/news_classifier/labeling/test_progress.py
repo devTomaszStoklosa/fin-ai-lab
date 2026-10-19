@@ -11,9 +11,7 @@ from fin_ai_lab.news_classifier.models import Headline
 
 
 def _headline(text: str, source: str = "bankier") -> Headline:
-    return Headline(
-        headline=text, source=source, published_at=datetime(2026, 9, 17, 12, 0, 0)
-    )
+    return Headline(headline=text, source=source, published_at=datetime(2026, 9, 17, 12, 0, 0))
 
 
 def test_save_and_load_round_trip(tmp_path) -> None:

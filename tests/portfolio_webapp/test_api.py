@@ -319,15 +319,18 @@ def _labeled_headline_json(published_at: str) -> str:
             "source_model": "few-shot",
         }
     )
+
+
 def _poll_committee_job(
-    client: TestClient, portfolio_id: str, job_id: str, terminal_statuses: set[str],
+    client: TestClient,
+    portfolio_id: str,
+    job_id: str,
+    terminal_statuses: set[str],
     timeout: float = 5.0,
 ) -> dict:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        body = client.get(
-            f"/api/portfolios/{portfolio_id}/committee-analysis/{job_id}"
-        ).json()
+        body = client.get(f"/api/portfolios/{portfolio_id}/committee-analysis/{job_id}").json()
         if body["status"] in terminal_statuses:
             return body
         time.sleep(0.02)
@@ -553,9 +556,7 @@ def test_comparison_report_parses_table_and_notes(tmp_path: Path) -> None:
 
 def test_comparison_report_handles_missing_corpus(tmp_path: Path) -> None:
     report_path = tmp_path / "report.md"
-    report_path.write_text(
-        "## Podsumowanie\n\n| Model |\n|---|\n| majority |\n", encoding="utf-8"
-    )
+    report_path.write_text("## Podsumowanie\n\n| Model |\n|---|\n| majority |\n", encoding="utf-8")
     client = _client_with_news_classifier(
         tmp_path, report_path=report_path, corpus_path=tmp_path / "missing.jsonl"
     )
@@ -565,6 +566,8 @@ def test_comparison_report_handles_missing_corpus(tmp_path: Path) -> None:
     body = response.json()
     assert body["corpus_size"] == 0
     assert body["corpus_latest_headline_date"] is None
+
+
 def test_committee_analysis_missing_portfolio_returns_404(tmp_path: Path) -> None:
     with _client_with_committee(tmp_path) as client:
         response = client.post(
@@ -1202,9 +1205,7 @@ def test_import_bossa_flags_suspicious_instrument_name(client: TestClient) -> No
 
 
 def test_import_bossa_for_missing_portfolio_returns_404(client: TestClient) -> None:
-    response = _import_bossa(
-        client, str(uuid.uuid4()), build_synthetic_bossa_csv(), "2026-09-15"
-    )
+    response = _import_bossa(client, str(uuid.uuid4()), build_synthetic_bossa_csv(), "2026-09-15")
 
     assert response.status_code == 404
 
@@ -1780,9 +1781,7 @@ def test_concurrent_report_generation_only_calls_llm_once(tmp_path: Path) -> Non
 def test_create_aggregator_with_no_members_has_zero_value(client: TestClient) -> None:
     portfolio_id = _create_portfolio(client)
 
-    response = client.post(
-        f"/api/portfolios/{portfolio_id}/aggregators", json={"name": "Pusty"}
-    )
+    response = client.post(f"/api/portfolios/{portfolio_id}/aggregators", json={"name": "Pusty"})
 
     assert response.status_code == 201
     body = response.json()

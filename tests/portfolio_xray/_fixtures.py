@@ -128,7 +128,15 @@ def build_synthetic_xtb_workbook(
     first_row_tail = list(padding)
     first_row_tail[3] = 59.4
     first_row = [
-        "My Trades", "MSCI ACWI", "ISAC.UK", "ETF", None, 6.0, 2745.41, None, 69.48
+        "My Trades",
+        "MSCI ACWI",
+        "ISAC.UK",
+        "ETF",
+        None,
+        6.0,
+        2745.41,
+        None,
+        69.48,
     ] + first_row_tail
     if extra_note is not None:
         first_row.append(extra_note)
@@ -140,9 +148,7 @@ def build_synthetic_xtb_workbook(
         ["My Trades", "1140380016", "ISAC.UK", None, "BUY", 6.0, 2745.41, 122.24, 69.48]
         + isac_lot_tail
     )
-    sheet.append(
-        ["My Trades", "Atrem", "ATR.PL", "STC", None, 1.0, 53.3, None, 12.25] + padding
-    )
+    sheet.append(["My Trades", "Atrem", "ATR.PL", "STC", None, 1.0, 53.3, None, 12.25] + padding)
     sheet.append(
         ["My Trades", "987654321", "ATR.PL", None, "BUY", 1.0, 53.3, 53.3, 12.25] + atr_lot_tail
     )
@@ -175,8 +181,15 @@ def build_synthetic_bossa_csv() -> bytes:
 
 
 def bossa_settlement_row(
-    day: str, kind: str, name: str, isin: str, quantity: str, price: str, currency: str,
-    amount: str, ref: str = "1",
+    day: str,
+    kind: str,
+    name: str,
+    isin: str,
+    quantity: str,
+    price: str,
+    currency: str,
+    amount: str,
+    ref: str = "1",
 ) -> str:
     """One settlement line of the Bossa financial history; kind is "kupna" or
     "sprzedaży", amount the net figure after commission (comma decimals)."""

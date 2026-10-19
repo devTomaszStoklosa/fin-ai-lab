@@ -157,9 +157,7 @@ def test_price_change_ratio_drops_trailing_nan_close(
     # Yahoo can return NaN for the most recent day before it finalizes --
     # must use the last REAL close (50.0), not the NaN one.
     index = pd.date_range("2026-01-01", periods=6)
-    history_df = pd.DataFrame(
-        {"Close": [10.0, 20.0, 30.0, 40.0, 50.0, float("nan")]}, index=index
-    )
+    history_df = pd.DataFrame({"Close": [10.0, 20.0, 30.0, 40.0, 50.0, float("nan")]}, index=index)
     _install_fake_yfinance(monkeypatch, history_df)
 
     ratio = price_change_ratio("ISAC.L", date(2026, 1, 2), cache_dir=tmp_path)

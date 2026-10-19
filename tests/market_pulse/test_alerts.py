@@ -9,8 +9,12 @@ def _observation(
     value: str, previous_value: str | None, change: str | None, series_id: str = "DGS10"
 ) -> IndicatorObservation:
     return IndicatorObservation(
-        series_id=series_id, label="10Y", value=Decimal(value), unit="%",
-        as_of_date=date(2026, 9, 17), source="fred",
+        series_id=series_id,
+        label="10Y",
+        value=Decimal(value),
+        unit="%",
+        as_of_date=date(2026, 9, 17),
+        source="fred",
         previous_value=Decimal(previous_value) if previous_value else None,
         change=Decimal(change) if change else None,
     )

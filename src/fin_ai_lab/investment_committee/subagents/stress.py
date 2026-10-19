@@ -66,9 +66,12 @@ async def run_stress_brief(
     the only I/O here; the scenario math itself is `compute_stress_scenarios`,
     a pure function the model never touches."""
     positions_with_base_value = [
-        (position, await convert_to_base_currency(
-            position.market_value, position.market_currency, portfolio.valuation_date, fx_client
-        ))
+        (
+            position,
+            await convert_to_base_currency(
+                position.market_value, position.market_currency, portfolio.valuation_date, fx_client
+            ),
+        )
         if position.market_value is not None and position.market_currency is not None
         else (position, Decimal(0))
         for position in portfolio.positions

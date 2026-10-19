@@ -43,8 +43,12 @@ async def fetch_indicators(
             return f"fred:{series_id}"
         value, as_of = result
         return IndicatorObservation(
-            series_id=series_id, label=label, value=value, unit=unit,
-            as_of_date=as_of, source="fred",
+            series_id=series_id,
+            label=label,
+            value=value,
+            unit=unit,
+            as_of_date=as_of,
+            source="fred",
         )
 
     async def nbp_fx_task(code: str, label: str) -> IndicatorObservation | str:
@@ -56,8 +60,12 @@ async def fetch_indicators(
             return f"nbp-fx:{code}"
         value, as_of = result
         return IndicatorObservation(
-            series_id=f"{code}/PLN", label=label, value=value, unit="PLN",
-            as_of_date=as_of, source="nbp-fx",
+            series_id=f"{code}/PLN",
+            label=label,
+            value=value,
+            unit="PLN",
+            as_of_date=as_of,
+            source="nbp-fx",
         )
 
     async def nbp_rate_task() -> IndicatorObservation | str:
@@ -66,8 +74,12 @@ async def fetch_indicators(
         except httpx.HTTPError:
             return "nbp-rate:stopa_referencyjna"
         return IndicatorObservation(
-            series_id="stopa_referencyjna", label="Stopa referencyjna NBP",
-            value=value, unit="%", as_of_date=as_of, source="nbp-rate",
+            series_id="stopa_referencyjna",
+            label="Stopa referencyjna NBP",
+            value=value,
+            unit="%",
+            as_of_date=as_of,
+            source="nbp-rate",
         )
 
     fred_tasks = [

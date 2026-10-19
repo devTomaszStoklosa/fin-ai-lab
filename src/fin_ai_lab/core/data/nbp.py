@@ -44,9 +44,7 @@ async def fetch_nbp_rate(
             raise
         rate = response["rates"][0]
         effective_date = (
-            date.fromisoformat(rate["effectiveDate"])
-            if "effectiveDate" in rate
-            else current_date
+            date.fromisoformat(rate["effectiveDate"]) if "effectiveDate" in rate else current_date
         )
         return Decimal(str(rate["mid"])), effective_date
     return None
