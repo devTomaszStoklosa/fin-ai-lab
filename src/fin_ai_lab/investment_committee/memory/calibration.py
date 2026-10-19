@@ -12,13 +12,15 @@ def brier_score(theses: list[Thesis]) -> float:
     outcome to score against — "not_yet_resolvable" and unresolved (None)
     theses are excluded, same as weights.py's precedent of raising on an
     empty/meaningless input rather than returning a misleading number."""
-    resolved = [thesis for thesis in theses if thesis.outcome in _OUTCOME_VALUE]
+    resolved = [
+        (thesis.confidence, _OUTCOME_VALUE[thesis.outcome])
+        for thesis in theses
+        if thesis.outcome is not None and thesis.outcome in _OUTCOME_VALUE
+    ]
     if not resolved:
         raise ValueError("No resolved theses to score")
 
-    return sum(
-        (thesis.confidence - _OUTCOME_VALUE[thesis.outcome]) ** 2 for thesis in resolved
-    ) / len(resolved)
+    return sum((confidence - outcome) ** 2 for confidence, outcome in resolved) / len(resolved)
 
 
 def brier_score_by_perspective(theses: list[Thesis]) -> dict[Perspective, float]:

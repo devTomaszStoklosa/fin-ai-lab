@@ -2,12 +2,12 @@ import csv
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from pydantic import ValidationError
 
 from fin_ai_lab.news_classifier.labeling.calibration import cohens_kappa
-from fin_ai_lab.news_classifier.models import Headline, Label, LabeledHeadline
+from fin_ai_lab.news_classifier.models import EventType, Headline, Label, LabeledHeadline, Sentiment
 
 # REQ-011 / docs/EVALS.md "Kalibracja LLM-as-judge": the human rates blind,
 # before seeing the model's answer, then agreement is computed — never the
@@ -156,7 +156,11 @@ def build_golden_set(reviewed_path: Path) -> list[LabeledHeadline]:
                 continue
             tickers = [t.strip() for t in row["human_tickers"].split(",") if t.strip()]
             try:
-                label = Label(sentiment=sentiment, event_type=event_type, tickers=tickers)
+                label = Label(
+                    sentiment=cast(Sentiment, sentiment),
+                    event_type=cast(EventType, event_type),
+                    tickers=tickers,
+                )
             except ValidationError:
                 continue
             golden.append(

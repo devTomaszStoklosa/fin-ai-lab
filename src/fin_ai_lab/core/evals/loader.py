@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
@@ -16,12 +17,15 @@ _VALID_EFFORTS = {"low", "medium", "high", "max"}
 
 
 def load_suite(suite_dir: Path, prompts: PromptRegistry | None = None) -> Suite:
-    raw = yaml.safe_load((suite_dir / "suite.yaml").read_text(encoding="utf-8")) or {}
+    raw: dict[str, Any] = (
+        yaml.safe_load((suite_dir / "suite.yaml").read_text(encoding="utf-8")) or {}
+    )
 
     try:
         suite = Suite(
             name=raw.get("name", ""),
-            dataset_version=raw.get("dataset_version"),
+            # A missing version fails Suite validation just below.
+            dataset_version=raw.get("dataset_version"),  # pyright: ignore[reportArgumentType]
             target=raw.get("target", ""),
             model=raw.get("model"),
             effort=raw.get("effort"),

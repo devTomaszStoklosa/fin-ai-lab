@@ -29,7 +29,7 @@ class ChatCompletionClient(Protocol):
 
 
 def load_llm(model_path: Path) -> ChatCompletionClient:
-    from llama_cpp import Llama
+    from llama_cpp import Llama  # pyright: ignore[reportMissingImports]  # extra "quantized"
 
     # 512 was too small once #142's vocab-conversion fix made tokenization
     # correct again — the real (correctly tokenized) prompt, including the
@@ -46,7 +46,7 @@ def _build_label_grammar() -> object:
     # decoding stays as a safety net: it masks every token that doesn't
     # fit the schema at each sampling step, so prose text can never come
     # out. It can't fix a wrong classification, only a malformed one.
-    from llama_cpp import LlamaGrammar
+    from llama_cpp import LlamaGrammar  # pyright: ignore[reportMissingImports]
 
     return LlamaGrammar.from_json_schema(json.dumps(Label.model_json_schema()))
 

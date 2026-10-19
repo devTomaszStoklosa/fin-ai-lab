@@ -172,7 +172,7 @@ def custom_tree(
     ungrouped = ShareNode(id=UNGROUPED_ID, name=UNGROUPED_NAME, kind="ungrouped")
     for holding in sorted(merged, key=lambda h: h.name.lower()):
         group_id = assignments.get(holding.key)
-        target = nodes[group_id] if group_id in group_ids else ungrouped
+        target = nodes[group_id] if group_id is not None and group_id in group_ids else ungrouped
         target.children.append(_asset_node(holding))
     root.children.append(ungrouped)
     return root

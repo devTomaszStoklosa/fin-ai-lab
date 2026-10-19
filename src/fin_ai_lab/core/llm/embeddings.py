@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Protocol
+from typing import Protocol, cast
 
 from google import genai
 from google.genai import types
@@ -117,7 +117,9 @@ class GeminiEmbeddingClient:
             raise
 
         latency_ms = int((time.monotonic() - started_at) * 1000)
-        vectors = [list(embedding.values) for embedding in response.embeddings]
+        vectors = [
+            list(cast(list[float], embedding.values)) for embedding in response.embeddings or []
+        ]
         estimated_tokens = _estimate_tokens(texts)
         cost_usd = price.cost_usd(estimated_tokens, 0)
 

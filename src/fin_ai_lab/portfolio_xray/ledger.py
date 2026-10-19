@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 from io import StringIO
-from typing import Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
@@ -20,7 +20,7 @@ from fin_ai_lab.portfolio_xray.metrics.price_history import fetch_price_history,
 # position); this file is transaction-shaped and needs aggregation instead.
 _ENCODING = "cp1250"
 _DELIMITER = ";"
-_SIDE_MAP = {"K": "buy", "S": "sell"}
+_SIDE_MAP: dict[str, Literal["buy", "sell"]] = {"K": "buy", "S": "sell"}
 
 # Yahoo quotes some London listings in pence. NBP has no pence rate, and its
 # lookup ignores letter case ("GBp" would fetch the pound's rate), so a pence
@@ -173,7 +173,7 @@ async def attach_current_market_values(
             updated.append(position)
             continue
         latest_price = await _close_in_cost_currency(
-            Decimal(str(history.iloc[-1])), position, history.index[-1].date(), fx_client
+            Decimal(str(history.iloc[-1])), position, cast(Any, history.index[-1]).date(), fx_client
         )
         if latest_price is None:
             updated.append(position)

@@ -123,7 +123,9 @@ def parse_financial_history(file_bytes: bytes) -> FinancialHistory:
                 transactions.append(trade)
             continue
 
-        kind = next((k for prefix, k in _KIND_BY_PREFIX.items() if title.startswith(prefix)), None)
+        kind: OperationKind | None = next(
+            (k for prefix, k in _KIND_BY_PREFIX.items() if title.startswith(prefix)), None
+        )
         if kind is None:
             unknown[title] = None
             continue

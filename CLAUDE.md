@@ -33,6 +33,7 @@ Laboratorium nauki AI engineeringu (RAG, LLM i prompty, agenci, fine-tuning, eva
 | Testy | `uv run pytest -q` |
 | Lint | `uv run ruff check .` |
 | Formatowanie | `uv run ruff format .` |
+| Typy | `uv run pyright` |
 | Eval | `uv run fin-ai-lab eval <suite>` (kontrakt: [docs/EVALS.md](docs/EVALS.md)) |
 
 ## Twarde zasady

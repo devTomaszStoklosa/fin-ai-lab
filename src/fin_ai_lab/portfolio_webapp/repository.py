@@ -3,6 +3,7 @@ import uuid
 from collections import Counter
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import cast
 
 import duckdb
 
@@ -15,7 +16,12 @@ from fin_ai_lab.portfolio_webapp.instruments import Decision, pair
 from fin_ai_lab.portfolio_webapp.lots import OpenLot
 from fin_ai_lab.portfolio_webapp.manual_valuations import ManualValuation
 from fin_ai_lab.portfolio_webapp.traded_instruments import InstrumentListing
-from fin_ai_lab.portfolio_xray.canonical import Position
+from fin_ai_lab.portfolio_xray.canonical import (
+    AccountType,
+    AssetClass,
+    Position,
+    ResolutionStatus,
+)
 from fin_ai_lab.portfolio_xray.ledger import BossaTransaction, dedup_key
 
 MANUAL_BROKER = "manual"
@@ -31,10 +37,10 @@ PositionRow = tuple[
     str | None,  # isin
     str | None,  # symbol
     str,  # asset_class
-    object,  # quantity (Decimal)
-    object | None,  # avg_cost (Decimal)
+    Decimal,  # quantity
+    Decimal | None,  # avg_cost
     str | None,  # cost_currency
-    object | None,  # market_value (Decimal)
+    Decimal | None,  # market_value
     str | None,  # market_currency
     date,  # valuation_date
     str,  # resolution_status
@@ -85,18 +91,18 @@ def row_to_position(row: PositionRow) -> Position:
     ) = row
     return Position(
         broker=broker,
-        account_type=account_type,
+        account_type=cast(AccountType, account_type),
         instrument_name=instrument_name,
         isin=isin,
         symbol=symbol,
-        asset_class=asset_class,
+        asset_class=cast(AssetClass, asset_class),
         quantity=quantity,
         avg_cost=avg_cost,
         cost_currency=cost_currency,
         market_value=market_value,
         market_currency=market_currency,
         valuation_date=valuation_date,
-        resolution_status=resolution_status,
+        resolution_status=cast(ResolutionStatus, resolution_status),
         figi=figi,
         ticker=ticker,
         exchange_code=exchange_code,
@@ -1061,10 +1067,12 @@ def create_breakdown_group(
 ) -> uuid.UUID:
     # Appended after its siblings -- creation order is the display (and chart
     # colour) order until the owner reorders.
-    (next_position,) = connection.execute(
+    next_row = connection.execute(
         "SELECT COALESCE(MAX(position), -1) + 1 FROM breakdown_groups WHERE breakdown_id = ?",
         [breakdown_id],
     ).fetchone()
+    assert next_row is not None  # an aggregate query always returns a row
+    (next_position,) = next_row
     group_id = uuid.uuid4()
     connection.execute(
         "INSERT INTO breakdown_groups (id, breakdown_id, parent_id, name, position) "

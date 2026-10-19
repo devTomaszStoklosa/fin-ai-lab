@@ -5,7 +5,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 from google import genai
@@ -67,6 +67,12 @@ class LlmClient(Protocol):
     async def complete(self, request: LlmRequest) -> LlmResult: ...
 
 
+class CostTrackingLlmClient(LlmClient, Protocol):
+    """An LlmClient that also keeps a running total of what it has spent."""
+
+    total_cost_usd: Decimal
+
+
 def _to_contents(messages: list[dict]) -> list[types.ContentDict]:
     return [{"role": m["role"], "parts": [{"text": m["text"]}]} for m in messages]
 
@@ -111,7 +117,7 @@ class _SelfClosingAsyncClient(httpx.AsyncClient):
     AsyncHttpxClient): follows redirects, and closes itself when garbage
     collected -- the web app builds a new LLM client per request."""
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.setdefault("follow_redirects", True)
         super().__init__(**kwargs)
 
@@ -198,7 +204,9 @@ class GeminiLlmClient:
                     max_output_tokens=request.max_output_tokens,
                     response_mime_type="application/json" if request.response_schema else None,
                     response_schema=request.response_schema,
-                    tools=request.tools,
+                    # Plain callables are what AFC takes; the SDK's union type
+                    # just lists them as a Callable[..., Any] member too.
+                    tools=cast("types.ToolListUnion | None", request.tools),
                 ),
             )
         except Exception as exc:
@@ -222,19 +230,24 @@ class GeminiLlmClient:
             _current_call_attempts.reset(attempts_token)
 
         latency_ms = int((time.monotonic() - started_at) * 1000)
+        # The SDK types these as Optional, but a response we got here always
+        # carries a candidate with a finish reason, usage and text.
+        assert response.candidates is not None and response.candidates[0].finish_reason is not None
         finish_reason = response.candidates[0].finish_reason.value
         incomplete = finish_reason != types.FinishReason.STOP.value
+        text = cast(str, response.text)
 
         parsed: BaseModel | None = None
         if request.response_schema is not None:
-            parsed = response.parsed
+            parsed = cast("BaseModel | None", response.parsed)
             if parsed is None:
                 try:
-                    parsed = request.response_schema.model_validate_json(response.text)
+                    parsed = request.response_schema.model_validate_json(text)
                 except Exception as exc:
-                    raise ResponseValidationError(str(exc), raw_response=response.text) from exc
+                    raise ResponseValidationError(str(exc), raw_response=text) from exc
 
         usage_metadata = response.usage_metadata
+        assert usage_metadata is not None
         usage = TokenUsage(
             input_tokens=usage_metadata.prompt_token_count or 0,
             output_tokens=usage_metadata.candidates_token_count or 0,
@@ -246,7 +259,7 @@ class GeminiLlmClient:
             part.function_call.name
             for content in (response.automatic_function_calling_history or [])
             for part in (content.parts or [])
-            if part.function_call is not None
+            if part.function_call is not None and part.function_call.name is not None
         ]
 
         self._trace_sink.write(
@@ -267,7 +280,7 @@ class GeminiLlmClient:
         )
 
         return LlmResult(
-            text=response.text,
+            text=text,
             parsed=parsed,
             finish_reason=finish_reason,
             incomplete=incomplete,

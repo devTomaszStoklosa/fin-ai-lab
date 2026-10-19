@@ -1,5 +1,6 @@
 import time
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -15,7 +16,11 @@ from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient
 
 DEFAULT_MAX_ITERATIONS = 10
 
-_WINNER_BY_LETTER = {"a": "single_agent", "b": "committee", "tie": "tie"}
+_WINNER_BY_LETTER: dict[str, Literal["single_agent", "committee", "tie"]] = {
+    "a": "single_agent",
+    "b": "committee",
+    "tie": "tie",
+}
 
 
 class _ComparisonVerdict(BaseModel):

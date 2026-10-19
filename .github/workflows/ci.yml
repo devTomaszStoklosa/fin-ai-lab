@@ -28,6 +28,20 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
 
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      # The same extras as the tests, so the optional libraries' types resolve.
+      # herbert and quantized (PyTorch, llama.cpp) are left out: the few
+      # imports from them carry a targeted pyright ignore.
+      - run: uv sync --locked --extra portfolio --extra rag --extra pulse --extra ml --extra groq --extra ui
+      - run: uv run pyright
+
   tests:
     name: Tests (${{ matrix.os }})
     strategy:

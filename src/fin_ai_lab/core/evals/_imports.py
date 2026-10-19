@@ -1,8 +1,9 @@
 import importlib
 from collections.abc import Callable
+from typing import Any
 
 
-def import_ref(ref: str, error_cls: type[Exception], label: str = "Target") -> object:
+def import_ref(ref: str, error_cls: type[Exception], label: str = "Target") -> Any:
     module_name, _, attr_name = ref.partition(":")
     if not module_name or not attr_name:
         raise error_cls(f"{label} '{ref}' not importable")

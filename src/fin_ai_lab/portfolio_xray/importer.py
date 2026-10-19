@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ValidationError
 
-from fin_ai_lab.portfolio_xray.canonical import AccountType, Position
+from fin_ai_lab.portfolio_xray.canonical import AccountType, AssetClass, Position
 from fin_ai_lab.portfolio_xray.parsers.config import CurrencyMarker
 from fin_ai_lab.portfolio_xray.parsers.reader import (
     apply_row_filter,
@@ -15,7 +15,7 @@ from fin_ai_lab.portfolio_xray.parsers.registry import ParserRegistry
 
 # ASSUMPTION: only categories seen in the sample XTB export are mapped;
 # anything else falls back to "other" rather than failing the import.
-CATEGORY_TO_ASSET_CLASS = {
+CATEGORY_TO_ASSET_CLASS: dict[str, AssetClass] = {
     "ETF": "etf",
     "STOCK": "equity",
     "STC": "equity",

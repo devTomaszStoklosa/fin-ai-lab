@@ -29,7 +29,7 @@ def check_alerts(
     alerts = []
     for observation in indicators:
         threshold = thresholds.get(observation.series_id)
-        if threshold is None or observation.change is None:
+        if threshold is None or observation.change is None or observation.previous_value is None:
             continue
         if abs(observation.change) < threshold:
             continue

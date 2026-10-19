@@ -2,6 +2,7 @@ import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 # yfinance is unofficial and sometimes blocked (docs/DATA-SOURCES.md); WIG20
 # is available only through the MCP server's interactive tool (P3-S3,
@@ -28,7 +29,7 @@ def fetch_wig20(cache_dir: Path = CACHE_DIR) -> tuple[Decimal, date] | None:
     result = (
         None
         if history.empty
-        else (Decimal(str(history["Close"].iloc[-1])), history.index[-1].date())
+        else (Decimal(str(history["Close"].iloc[-1])), cast(Any, history.index[-1]).date())
     )
 
     cache_dir.mkdir(parents=True, exist_ok=True)

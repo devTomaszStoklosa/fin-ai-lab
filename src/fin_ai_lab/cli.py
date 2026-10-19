@@ -4,8 +4,9 @@ import os
 import sys
 from datetime import UTC, datetime
 from decimal import Decimal
+from io import TextIOWrapper
 from pathlib import Path
-from typing import get_args
+from typing import cast, get_args
 
 import typer
 
@@ -66,8 +67,8 @@ from fin_ai_lab.portfolio_xray.service import import_file
 
 # Windows' default stdout/stderr encoding is cp1252, not UTF-8 -- garbles
 # Polish diacritics in report text even when redirected to a file (#145).
-sys.stdout.reconfigure(encoding="utf-8")
-sys.stderr.reconfigure(encoding="utf-8")
+cast(TextIOWrapper, sys.stdout).reconfigure(encoding="utf-8")
+cast(TextIOWrapper, sys.stderr).reconfigure(encoding="utf-8")
 
 PORTFOLIO_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
 SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
@@ -188,7 +189,7 @@ def import_positions(
         import_file(
             file.read_bytes(),
             valuation_date=parsed_date,
-            account_type=account_type,
+            account_type=cast(AccountType, account_type),
             market_currency=market_currency,
             registry=registry,
             broker_hint=broker,
@@ -264,7 +265,7 @@ def report_command(
             generate_report(
                 file.read_bytes(),
                 valuation_date=parsed_date,
-                account_type=account_type,
+                account_type=cast(AccountType, account_type),
                 market_currency=market_currency,
                 registry=registry,
                 llm_client=llm_client,
@@ -549,7 +550,7 @@ def investment_committee_analyze(
         result = await import_file(
             file.read_bytes(),
             valuation_date=parsed_date,
-            account_type=account_type,
+            account_type=cast(AccountType, account_type),
             market_currency=market_currency,
             registry=registry,
             broker_hint=broker,
@@ -633,7 +634,7 @@ def investment_committee_compare(
         result = await import_file(
             file.read_bytes(),
             valuation_date=parsed_date,
-            account_type=account_type,
+            account_type=cast(AccountType, account_type),
             market_currency=market_currency,
             registry=registry,
             broker_hint=broker,

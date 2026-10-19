@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fin_ai_lab.core.evals.models import RunContext
-from fin_ai_lab.portfolio_xray.canonical import Position
+from fin_ai_lab.portfolio_xray.canonical import AssetClass, Position
 from fin_ai_lab.portfolio_xray.metrics.risk import RiskMetrics
 from fin_ai_lab.portfolio_xray.metrics.weights import WeightedPosition, WeightMetrics
 from fin_ai_lab.portfolio_xray.report.builder import ReportRejectedError, build_report
@@ -15,7 +15,7 @@ from fin_ai_lab.portfolio_xray.report.models import InstrumentMetadata, MetricsJ
 _VALUATION_DATE = date(2026, 9, 15)
 
 
-def _position(name: str, symbol: str, asset_class: str) -> Position:
+def _position(name: str, symbol: str, asset_class: AssetClass) -> Position:
     return Position(
         broker="test",
         account_type="regular",

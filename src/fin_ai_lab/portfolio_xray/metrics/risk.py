@@ -19,7 +19,7 @@ class RiskMetrics(BaseModel):
 
 
 def compute_risk_metrics(
-    price_history_by_key: dict[str, pd.Series],
+    price_history_by_key: dict[str, pd.Series | None],
     weight_by_key: dict[str, float],
     total_positions: int,
     benchmark_history: pd.Series | None = None,
@@ -78,4 +78,4 @@ def _compute_beta(
     benchmark_variance = aligned["benchmark"].var()
     if benchmark_variance == 0:
         return None
-    return float(aligned["portfolio"].cov(aligned["benchmark"]) / benchmark_variance)
+    return float(aligned["portfolio"].cov(aligned["benchmark"]) / benchmark_variance)  # pyright: ignore[reportArgumentType]
