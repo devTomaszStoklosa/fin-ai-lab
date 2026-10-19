@@ -1,5 +1,9 @@
 # fin-ai-lab
 
+[![CI](https://github.com/devTomaszStoklosa/fin-ai-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/devTomaszStoklosa/fin-ai-lab/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)
+
 A hands-on AI engineering lab on financial-market data: LLM structured outputs, RAG, tool-using agents, multi-agent orchestration and fine-tuning. Every project here is measured by an eval suite before and after each change. One rule runs through all of it: **code computes the numbers, the model only explains them.**
 
 > A learning project, not a product. Reports describe exposure and risk; nothing here is investment advice.
@@ -19,22 +23,28 @@ A hands-on AI engineering lab on financial-market data: LLM structured outputs, 
 ## Architecture
 
 ```mermaid
-flowchart TB
-  subgraph core["core (shared, depends on nothing else)"]
-    llm["llm: Gemini and Groq clients behind one protocol,<br/>tokens, cost, traces, free-tier throttling"]
-    evals["evals: suites, graders, baselines"]
-    prompts["prompts: versioned files"]
-    http["http: throttled, cached client"]
+flowchart LR
+  subgraph entry["Entry points"]
+    direction TB
+    web["Web app<br/>FastAPI + React"]
+    cli["fin-ai-lab CLI"]
   end
-  P1[portfolio_xray] --> core
-  P2[filings_rag] --> core
-  P3[market_pulse] --> core
-  P4[news_classifier] --> core
-  P5[investment_committee] --> core
-  P5 --> P1
-  P5 --> P3
-  web[portfolio_webapp + React frontend] --> P1 & P2 & P3 & P4 & P5
-  cli[fin-ai-lab CLI] --> P1 & P2 & P3 & P4 & P5
+  subgraph projects["Projects"]
+    direction TB
+    P1["P1 Portfolio X-Ray"]
+    P2["P2 Filings RAG"]
+    P3["P3 Market Pulse"]
+    P4["P4 News classifier"]
+    P5["P5 Investment committee<br/>(uses P1 and P3)"]
+  end
+  subgraph core["core: depends on nothing"]
+    direction TB
+    llm["llm: Gemini, Groq<br/>tokens, cost, traces"]
+    evals["evals: suites, graders,<br/>baselines"]
+    prompts["prompts: versioned"]
+    http["http: throttled, cached"]
+  end
+  entry --> projects --> core
 ```
 
 - Each project depends only on `core`, except P5, which composes P1 and P3, and the web app, which composes all of them.
@@ -116,3 +126,7 @@ The detailed documentation is in Polish, the language I learn in; code, prompts 
 ## History
 
 The development history up to 2026-10-19 (about 250 commits and 160 pull requests) lives in a private repository, because it contains data from my real broker accounts. This repository starts from that state; all later work happens here. Issue and pull request numbers mentioned in the docs (such as #142) refer to that archive; its open issues were moved here as #1–#9.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
