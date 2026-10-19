@@ -255,8 +255,7 @@ def insert_position(
 ) -> PositionRow:
     position_id = uuid.uuid4()
     connection.execute(
-        "INSERT INTO positions VALUES "
-        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO positions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             position_id,
             snapshot_id,
@@ -515,8 +514,17 @@ def create_committee_job(
         [job_id, portfolio_id, snapshot_id, variant, created_at, model],
     )
     return (
-        job_id, portfolio_id, snapshot_id, variant, "pending", created_at,
-        None, model, None, None, None,
+        job_id,
+        portfolio_id,
+        snapshot_id,
+        variant,
+        "pending",
+        created_at,
+        None,
+        model,
+        None,
+        None,
+        None,
     )
 
 

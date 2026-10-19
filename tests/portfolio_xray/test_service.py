@@ -62,6 +62,7 @@ class _RetryStubOpenFigiClient:
             return Identification(status="unresolved")
         return self._retry_identification
 
+
 PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
 
 

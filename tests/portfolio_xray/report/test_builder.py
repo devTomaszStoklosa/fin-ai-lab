@@ -147,9 +147,7 @@ def test_verify_numbers_faithful_tolerates_small_rounding() -> None:
 async def test_build_report_appends_footer_when_model_omits_it() -> None:
     llm_client = FakeLlmClient({"narrative": "Portfel złożony w 60% z Technology i 40% z ETF."})
 
-    text = await build_report(
-        _metrics(), {}, llm_client, _prompt_registry(), "gemini-2.5-flash"
-    )
+    text = await build_report(_metrics(), {}, llm_client, _prompt_registry(), "gemini-2.5-flash")
 
     assert text.endswith(EDUCATIONAL_FOOTER)
 

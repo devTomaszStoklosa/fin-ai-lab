@@ -23,9 +23,7 @@ def _fx_client(tmp_path: Path, handler: httpx.MockTransport) -> NbpClient:
 async def test_fetch_fx_rate_returns_todays_rate_when_published(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/exchangerates/rates/a/eur/2026-09-17/"
-        return httpx.Response(
-            200, json={"rates": [{"mid": 4.36, "effectiveDate": "2026-09-17"}]}
-        )
+        return httpx.Response(200, json={"rates": [{"mid": 4.36, "effectiveDate": "2026-09-17"}]})
 
     client = _fx_client(tmp_path, httpx.MockTransport(handler))
 

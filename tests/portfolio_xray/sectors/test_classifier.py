@@ -53,9 +53,7 @@ async def test_classify_sector_skips_llm_for_non_equity() -> None:
 async def test_classify_sector_returns_model_answer_for_equity() -> None:
     llm_client = FakeLlmClient({"classify_sector": '{"sector": "Technology"}'})
 
-    sector = await classify_sector(
-        _position(), llm_client, _prompt_registry(), "gemini-2.5-flash"
-    )
+    sector = await classify_sector(_position(), llm_client, _prompt_registry(), "gemini-2.5-flash")
 
     assert sector == "Technology"
 
@@ -63,8 +61,6 @@ async def test_classify_sector_returns_model_answer_for_equity() -> None:
 async def test_classify_sector_falls_back_to_other_for_unknown_answer() -> None:
     llm_client = FakeLlmClient({"classify_sector": '{"sector": "Not A Real Sector"}'})
 
-    sector = await classify_sector(
-        _position(), llm_client, _prompt_registry(), "gemini-2.5-flash"
-    )
+    sector = await classify_sector(_position(), llm_client, _prompt_registry(), "gemini-2.5-flash")
 
     assert sector == "other"

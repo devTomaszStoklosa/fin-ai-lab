@@ -65,8 +65,7 @@ def test_filing_url_strips_dashes_and_leading_zeros() -> None:
     url = filing_url(filing)
 
     assert url == (
-        "https://www.sec.gov/Archives/edgar/data/789019/"
-        "000095017025100235/msft-20250630.htm"
+        "https://www.sec.gov/Archives/edgar/data/789019/000095017025100235/msft-20250630.htm"
     )
 
 
@@ -175,7 +174,6 @@ async def test_sec_edgar_client_ingest_10k_produces_chunks_with_citations(tmp_pa
     assert risk_chunk.fiscal_period == "FY2025"
     assert risk_chunk.language == "en"
     assert risk_chunk.source_location == (
-        "https://www.sec.gov/Archives/edgar/data/789019/"
-        "000095017025100235/msft-20250630.htm"
+        "https://www.sec.gov/Archives/edgar/data/789019/000095017025100235/msft-20250630.htm"
     )
     assert "competition and regulation" in risk_chunk.text

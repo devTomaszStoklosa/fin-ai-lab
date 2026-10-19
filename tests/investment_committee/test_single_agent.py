@@ -24,9 +24,13 @@ def _portfolio() -> Portfolio:
         valuation_date=date(2026, 9, 17),
         positions=[
             Position(
-                broker="xtb", account_type="regular", instrument_name="Orlen",
-                asset_class="equity", quantity=Decimal("10"),
-                market_value=Decimal("1000"), market_currency="PLN",
+                broker="xtb",
+                account_type="regular",
+                instrument_name="Orlen",
+                asset_class="equity",
+                quantity=Decimal("10"),
+                market_value=Decimal("1000"),
+                market_currency="PLN",
                 valuation_date=date(2026, 9, 17),
             )
         ],
@@ -38,8 +42,14 @@ async def test_run_single_agent_returns_the_llm_report_and_records_cost() -> Non
     budget = BudgetGuard(budget_usd=Decimal("1.00"), max_iterations=10)
 
     report = await run_single_agent(
-        _portfolio(), "portfolio-1", FredClient("fake-key"), NbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        _portfolio(),
+        "portfolio-1",
+        FredClient("fake-key"),
+        NbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        budget,
     )
 
     assert report.text == "Analiza portfela: alokacja skoncentrowana."
@@ -47,7 +57,9 @@ async def test_run_single_agent_returns_the_llm_report_and_records_cost() -> Non
     assert len(llm_client.requests) == 1
     tool_names = {tool.__name__ for tool in llm_client.requests[0].tools}
     assert tool_names == {
-        "get_portfolio_allocation", "get_market_regime", "ask_about_filings",
+        "get_portfolio_allocation",
+        "get_market_regime",
+        "ask_about_filings",
         "get_news_sentiment",
     }
     assert budget.iterations == 1
@@ -59,8 +71,14 @@ async def test_run_single_agent_stops_before_calling_the_llm_when_budget_exhaust
     budget.record(Decimal("0.01"))  # already over the zero budget
 
     report = await run_single_agent(
-        _portfolio(), "portfolio-1", FredClient("fake-key"), NbpClient(),
-        llm_client, _prompt_registry(), "gemini-3.6-flash", budget,
+        _portfolio(),
+        "portfolio-1",
+        FredClient("fake-key"),
+        NbpClient(),
+        llm_client,
+        _prompt_registry(),
+        "gemini-3.6-flash",
+        budget,
     )
 
     assert llm_client.requests == []

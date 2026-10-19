@@ -31,7 +31,8 @@ def _training_set() -> list[LabeledHeadline]:
 def test_tfidf_logreg_predicts_a_known_category_pattern() -> None:
     model = TfidfLogRegModel.fit(_training_set())
     headline = Headline(
-        headline="Spolka ogloasza swietne zyski", source="bankier",
+        headline="Spolka ogloasza swietne zyski",
+        source="bankier",
         published_at=datetime(2026, 9, 18),
     )
 
@@ -44,7 +45,8 @@ def test_tfidf_logreg_predicts_a_known_category_pattern() -> None:
 def test_tfidf_logreg_matches_a_known_company_name_to_its_ticker() -> None:
     model = TfidfLogRegModel.fit(_training_set())
     headline = Headline(
-        headline="PKN Orlen ogloasza swietne zyski", source="bankier",
+        headline="PKN Orlen ogloasza swietne zyski",
+        source="bankier",
         published_at=datetime(2026, 9, 18),
     )
 

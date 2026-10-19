@@ -309,11 +309,12 @@ def market_pulse_brief(
     nbp_client = NbpClient()
 
     async def run() -> str:
-        (indicators, missing_indicator_sources), (news, missing_news_sources) = (
-            await asyncio.gather(
-                fetch_indicators(fred_client, nbp_client),
-                fetch_news(),
-            )
+        (
+            (indicators, missing_indicator_sources),
+            (news, missing_news_sources),
+        ) = await asyncio.gather(
+            fetch_indicators(fred_client, nbp_client),
+            fetch_news(),
         )
         missing_sources = missing_indicator_sources + missing_news_sources
         previous_indicators = load_previous()
@@ -351,9 +352,7 @@ def market_pulse_ask(
     fred_client = FredClient(settings.require_fred_api_key())
     nbp_client = NbpClient()
 
-    answer = asyncio.run(
-        ask(question, llm_client, prompt_registry, model, fred_client, nbp_client)
-    )
+    answer = asyncio.run(ask(question, llm_client, prompt_registry, model, fred_client, nbp_client))
     typer.echo(answer.text)
 
 
@@ -446,9 +445,7 @@ def news_classifier_label(
 
 @news_classifier_app.command("export-review")
 def news_classifier_export_review(
-    output: Path = typer.Option(
-        Path("data/review/news_classifier_review.csv"), "--output"
-    ),
+    output: Path = typer.Option(Path("data/review/news_classifier_review.csv"), "--output"),
     sample_size: int = typer.Option(DEFAULT_SAMPLE_SIZE, "--sample-size"),
 ) -> None:
     corpus = load_labeled()
@@ -567,13 +564,25 @@ def investment_committee_analyze(
         portfolio = Portfolio(positions=result.positions, valuation_date=parsed_date)
         if committee:
             report = await run_committee(
-                portfolio, str(file), fred_client, nbp_client,
-                llm_client, prompt_registry, model, budget,
+                portfolio,
+                str(file),
+                fred_client,
+                nbp_client,
+                llm_client,
+                prompt_registry,
+                model,
+                budget,
             )
         else:
             report = await run_single_agent(
-                portfolio, str(file), fred_client, nbp_client,
-                llm_client, prompt_registry, model, budget,
+                portfolio,
+                str(file),
+                fred_client,
+                nbp_client,
+                llm_client,
+                prompt_registry,
+                model,
+                budget,
             )
         return report.text
 
@@ -638,8 +647,14 @@ def investment_committee_compare(
 
         portfolio = Portfolio(positions=result.positions, valuation_date=parsed_date)
         return await compare_committee_vs_single(
-            portfolio, str(file), fred_client, nbp_client,
-            llm_client, prompt_registry, model, Decimal(budget_usd),
+            portfolio,
+            str(file),
+            fred_client,
+            nbp_client,
+            llm_client,
+            prompt_registry,
+            model,
+            Decimal(budget_usd),
         )
 
     try:

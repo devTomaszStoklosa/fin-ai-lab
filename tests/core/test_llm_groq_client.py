@@ -52,9 +52,7 @@ class _FakeResponse:
         completion_tokens: int = 5,
     ) -> None:
         self.choices = [
-            SimpleNamespace(
-                message=_FakeMessage(content, tool_calls), finish_reason=finish_reason
-            )
+            SimpleNamespace(message=_FakeMessage(content, tool_calls), finish_reason=finish_reason)
         ]
         self.usage = SimpleNamespace(
             prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
