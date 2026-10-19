@@ -16,22 +16,15 @@ from google.genai import errors as genai_errors
 from openpyxl.utils.exceptions import InvalidFileException
 from pydantic import ValidationError
 
-from fin_ai_lab.core.config import Settings
-from fin_ai_lab.core.errors import ResponseValidationError
-from fin_ai_lab.core.llm.client import CostTrackingLlmClient, GeminiLlmClient, LlmClient
-from fin_ai_lab.core.llm.embeddings import EmbeddingClient, GeminiEmbeddingClient
-from fin_ai_lab.core.llm.fake import FakeLlmClient
-from fin_ai_lab.core.llm.trace import TRACES_DIR, count_calls_today
+from fin_ai_lab.core.llm.client import CostTrackingLlmClient, LlmClient
+from fin_ai_lab.core.llm.embeddings import EmbeddingClient
+from fin_ai_lab.core.llm.trace import TRACES_DIR
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.filings_rag.service import INDEX_PATH as FILINGS_INDEX_PATH
 from fin_ai_lab.filings_rag.service import PROMPTS_DIR as FILINGS_RAG_PROMPTS_DIR
 from fin_ai_lab.filings_rag.service import (
-    AnswerRejectedError,
     SavedIndexCache,
-    UnknownCompanyError,
-    indexed_companies,
 )
-from fin_ai_lab.filings_rag.service import ask as ask_filings
 from fin_ai_lab.investment_committee.service import (
     BudgetGuard,
     CommitteeReport,
@@ -41,11 +34,8 @@ from fin_ai_lab.investment_committee.service import (
     run_single_agent,
 )
 from fin_ai_lab.market_pulse.service import STATE_PATH as MARKET_PULSE_STATE_PATH
-from fin_ai_lab.market_pulse.service import FredClient, NbpClient, classify_regime
-from fin_ai_lab.market_pulse.service import ask as run_market_pulse_ask
-from fin_ai_lab.market_pulse.service import load_previous as load_market_pulse_state
+from fin_ai_lab.market_pulse.service import FredClient, NbpClient
 from fin_ai_lab.news_classifier.service import CORPUS_PATH as NEWS_CLASSIFIER_CORPUS_PATH
-from fin_ai_lab.news_classifier.service import load_labeled as load_news_classifier_corpus
 from fin_ai_lab.portfolio_webapp import db, repository
 from fin_ai_lab.portfolio_webapp.aggregators import (
     Aggregator,
@@ -54,6 +44,28 @@ from fin_ai_lab.portfolio_webapp.aggregators import (
     resolve_value,
     validate_no_cycle,
 )
+from fin_ai_lab.portfolio_webapp.api import filings_rag, market_pulse, news_classifier, system
+from fin_ai_lab.portfolio_webapp.api.common import llm_unavailable
+from fin_ai_lab.portfolio_webapp.api.defaults import (
+    BASE_CURRENCY,
+    COMMITTEE_BUDGET_USD,
+    COMMITTEE_MAX_ITERATIONS,
+    COMPARISON_REPORT_PATH,
+    CONFIRMATION_TIMEOUT_S,
+    INVESTMENT_COMMITTEE_PROMPTS_DIR,
+    MARKET_PULSE_BRIEFS_DIR,
+    MARKET_PULSE_PROMPTS_DIR,
+    MODEL,
+    PORTFOLIO_PROMPTS_DIR,
+    REPORT_PROMPTS_DIR,
+    SECTOR_PROMPTS_DIR,
+    _default_embedding_client,
+    _default_fred_client,
+    _default_llm_client,
+    _fetch_adjusted_daily_closes,
+    _fetch_daily_closes,
+)
+from fin_ai_lab.portfolio_webapp.api.deps import AppDeps
 from fin_ai_lab.portfolio_webapp.benchmark import BENCHMARKS, normalize_ticker
 from fin_ai_lab.portfolio_webapp.benchmark_builder import (
     BenchmarkNotFoundError,
@@ -121,25 +133,16 @@ from fin_ai_lab.portfolio_webapp.schemas import (
     CommitteeJobOut,
     CommitteeJobStatus,
     CommitteeVariant,
-    ComparisonReportOut,
     ConfirmBudgetRequest,
     DividendForecastOut,
     DividendHistoryOut,
-    FilingsAnswerOut,
-    FilingsAskRequest,
-    FilingsIndexOut,
     ImportResponse,
     InstrumentDetachIn,
     InstrumentLinkIn,
     InstrumentOwnerDataIn,
     InstrumentsOut,
-    LlmUsageOut,
     ManualValuationIn,
     ManualValuationOut,
-    MarketPulseAskOut,
-    MarketPulseAskRequest,
-    MarketPulseBriefOut,
-    MarketPulseIndicatorsOut,
     MetricsOut,
     PortfolioCreate,
     PortfolioOut,
@@ -166,7 +169,6 @@ from fin_ai_lab.portfolio_xray.identification.openfigi import OpenFigiClient
 from fin_ai_lab.portfolio_xray.ledger import BossaTransaction, parse_bossa_csv
 from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient, convert_to_base_currency
 from fin_ai_lab.portfolio_xray.metrics.price_history import (
-    fetch_daily_closes,
     fetch_dividends,
     fetch_quote_currency,
     price_change_ratio,
@@ -185,71 +187,6 @@ from fin_ai_lab.portfolio_xray.report.builder import ReportRejectedError, build_
 from fin_ai_lab.portfolio_xray.report.models import InstrumentMetadata, MetricsJson
 from fin_ai_lab.portfolio_xray.sectors.classifier import classify_sector
 from fin_ai_lab.portfolio_xray.service import build_bossa_import_result, import_file
-
-BASE_CURRENCY = "PLN"  # matches canonical.Portfolio.base_currency (Literal["PLN"])
-
-# Same default as the CLI (cli.py's `import` command) -- not exposed as a
-# web UI option, this tool doesn't need model choice as a user-facing knob.
-MODEL = "gemini-3.6-flash"
-
-# Free-tier daily cap per model, RPD only (RPM is throttled transparently by
-# GeminiLlmClient itself, #218 -- nothing to surface here). Values verified
-# live via real 429s (docs/LLM-API.md), not guessed. gemini-embedding-2
-# (#225's "Zapytaj raport", one call per question) has no entry: its only
-# verified free-tier limit is per minute and counts texts, which
-# GeminiEmbeddingClient already paces itself under; a daily cap for it was
-# never observed, and an unverified number here would be a guess.
-KNOWN_FREE_TIER_LIMITS: dict[str, int] = {"gemini-3.6-flash": 20}
-# cwd-relative, same as cli.py's own prompt dirs -- both are always launched
-# via `uv run` from the repo root. Not imported from cli.py: portfolio_webapp
-# may only depend on core and portfolio_xray.service (docs/ARCHITECTURE.md
-# rule 6), not on the CLI module.
-PORTFOLIO_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/parsers/prompts")
-REPORT_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/report/prompts")
-SECTOR_PROMPTS_DIR = Path("src/fin_ai_lab/portfolio_xray/sectors/prompts")
-MARKET_PULSE_PROMPTS_DIR = Path("src/fin_ai_lab/market_pulse/prompts")
-# Read-only, generated by the scheduled task (scripts/market_pulse_register_task.ps1)
-# -- this app never writes here, only shows the latest already-generated brief.
-MARKET_PULSE_BRIEFS_DIR = Path("data/briefs")
-# Checked-in artifact from `news-classifier compare-report` (P4-S7) -- this
-# app only reads and displays it, never regenerates it (that needs real eval
-# runs under evals/runs/, out of scope for a zero-cost display endpoint).
-COMPARISON_REPORT_PATH = Path("docs/specs/p4-news-classifier/reports/p4-s7-comparison.md")
-INVESTMENT_COMMITTEE_PROMPTS_DIR = Path("src/fin_ai_lab/investment_committee/prompts")
-# Same defaults as cli.py's `investment-committee analyze`/`compare` commands
-# -- not exposed as a user-tunable web option (#226 doesn't ask for one).
-COMMITTEE_BUDGET_USD = Decimal("1.00")
-COMMITTEE_MAX_ITERATIONS = 10
-# How long a job waits for a POST .../confirm before treating the budget
-# override as denied (BudgetGuard's own fail-safe-deny default) and failing
-# the job -- so an abandoned browser tab never holds a worker thread forever.
-CONFIRMATION_TIMEOUT_S = 900.0
-
-
-def _default_llm_client() -> CostTrackingLlmClient:
-    settings = Settings()
-    if settings.gemini_api_key:
-        return GeminiLlmClient(api_key=settings.gemini_api_key)
-    return FakeLlmClient({})
-
-
-def _fetch_daily_closes(ticker: str, start: date_type, refresh: bool) -> dict | None:
-    return fetch_daily_closes(ticker, start, refresh=refresh)
-
-
-def _fetch_adjusted_daily_closes(ticker: str, start: date_type, refresh: bool) -> dict | None:
-    return fetch_daily_closes(ticker, start, refresh=refresh, adjusted=True)
-
-
-def _default_embedding_client() -> EmbeddingClient | None:
-    settings = Settings()
-    if settings.gemini_api_key:
-        return GeminiEmbeddingClient(api_key=settings.gemini_api_key)
-    return None
-
-
-def _default_fred_client() -> FredClient:
-    return FredClient(Settings().require_fred_api_key())
 
 
 def create_app(
@@ -354,122 +291,30 @@ def create_app(
 
     app = FastAPI(title="Portfel", lifespan=lifespan)
 
-    @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
-
-    @app.get("/api/llm-usage", response_model=list[LlmUsageOut])
-    def llm_usage() -> list[LlmUsageOut]:
-        calls_by_model = count_calls_today(traces_dir)
-        return [
-            LlmUsageOut(model=model, calls_today=calls_by_model.get(model, 0), rpd_limit=rpd_limit)
-            for model, rpd_limit in KNOWN_FREE_TIER_LIMITS.items()
-        ]
-
-    @app.get("/api/market-pulse/brief/latest", response_model=MarketPulseBriefOut | None)
-    def market_pulse_latest_brief() -> MarketPulseBriefOut | None:
-        latest = _latest_brief_file(briefs_dir)
-        if latest is None:
-            return None
-        brief_date, path = latest
-        return MarketPulseBriefOut(date=brief_date, text=path.read_text(encoding="utf-8"))
-
-    @app.get("/api/market-pulse/indicators", response_model=MarketPulseIndicatorsOut)
-    def market_pulse_indicators() -> MarketPulseIndicatorsOut:
-        indicators = load_market_pulse_state(market_pulse_state_path)
-        regime = classify_regime(indicators)
-        return MarketPulseIndicatorsOut(
-            regime=regime.regime, regime_signals=regime.signals, indicators=indicators
-        )
-
-    @app.post("/api/market-pulse/ask", response_model=MarketPulseAskOut)
-    async def market_pulse_ask(payload: MarketPulseAskRequest) -> MarketPulseAskOut:
-        llm_client = llm_client_factory()
-        prompt_registry = app.state.prompt_registry
-        try:
-            answer = await run_market_pulse_ask(
-                payload.question,
-                llm_client,
-                prompt_registry,
-                MODEL,
-                fred_client_factory(),
-                nbp_client_factory(),
-            )
-        except genai_errors.APIError as exc:
-            raise _llm_unavailable(exc) from exc
-        return MarketPulseAskOut(text=answer.text, tool_calls=answer.tool_calls)
-
-    @app.get("/api/news-classifier/comparison-report", response_model=ComparisonReportOut | None)
-    def news_classifier_comparison_report() -> ComparisonReportOut | None:
-        if not comparison_report_path.exists():
-            return None
-        markdown = comparison_report_path.read_text(encoding="utf-8")
-        columns, rows = _parse_markdown_table(markdown, "## Podsumowanie")
-        notes = _parse_bullet_list(markdown, "## Klasy bez wsparcia w zbiorze testowym")
-
-        corpus = load_news_classifier_corpus(news_classifier_corpus_path)
-        latest_headline_date = max(
-            (item.headline.published_at.date() for item in corpus), default=None
-        )
-        return ComparisonReportOut(
-            columns=columns,
-            rows=rows,
-            zero_support_notes=notes,
-            corpus_size=len(corpus),
-            corpus_latest_headline_date=latest_headline_date,
-        )
-
-    @app.get("/api/filings-rag/companies", response_model=FilingsIndexOut)
-    def filings_rag_companies() -> FilingsIndexOut:
-        index = app.state.filings_index_cache.get()
-        if index is None:
-            return FilingsIndexOut(built_at=None, companies=[])
-        return FilingsIndexOut(built_at=index.built_at, companies=indexed_companies(index))
-
-    @app.post("/api/filings-rag/ask", response_model=FilingsAnswerOut)
-    async def filings_rag_ask(payload: FilingsAskRequest) -> FilingsAnswerOut:
-        index = app.state.filings_index_cache.get()
-        if index is None:
-            raise HTTPException(
-                status_code=409,
-                detail="Indeks raportów nie jest jeszcze zbudowany -- uruchom "
-                "`uv run fin-ai-lab filings-rag build-index`.",
-            )
-        embedding_client = embedding_client_factory()
-        if embedding_client is None:
-            raise HTTPException(
-                status_code=503, detail="Brak klucza GEMINI_API_KEY -- nie da się zadać pytania."
-            )
-        try:
-            answer = await ask_filings(
-                payload.question,
-                index,
-                company=payload.company,
-                llm_client=llm_client_factory(),
-                embedding_client=embedding_client,
-                prompt_registry=app.state.prompt_registry,
-                model=MODEL,
-            )
-        except UnknownCompanyError as exc:
-            raise HTTPException(
-                status_code=422, detail=f"Spółki {exc.company} nie ma w indeksie."
-            ) from exc
-        except genai_errors.APIError as exc:
-            raise _llm_unavailable(exc) from exc
-        except (AnswerRejectedError, ResponseValidationError) as exc:
-            # REQ-020: a citation that isn't a verbatim excerpt of its source
-            # is never shown -- the whole answer is withheld instead.
-            raise HTTPException(
-                status_code=502,
-                detail="Model zwrócił odpowiedź, której cytatów nie dało się potwierdzić "
-                "w źródle -- spróbuj ponownie albo zadaj pytanie inaczej.",
-            ) from exc
-        return FilingsAnswerOut(
-            text=answer.text,
-            refused=answer.refused,
-            refusal_reason=answer.refusal_reason,
-            citations=answer.citations,
-        )
+    deps = AppDeps(
+        openfigi_client_factory=openfigi_client_factory,
+        llm_client_factory=llm_client_factory,
+        parser_registry_factory=parser_registry_factory,
+        fx_client_factory=fx_client_factory,
+        price_ratio_fetcher=price_ratio_fetcher,
+        quote_currency_fetcher=quote_currency_fetcher,
+        traces_dir=traces_dir,
+        briefs_dir=briefs_dir,
+        market_pulse_state_path=market_pulse_state_path,
+        fred_client_factory=fred_client_factory,
+        nbp_client_factory=nbp_client_factory,
+        comparison_report_path=comparison_report_path,
+        embedding_client_factory=embedding_client_factory,
+        news_classifier_corpus_path=news_classifier_corpus_path,
+        committee_budget_usd=committee_budget_usd,
+        committee_max_iterations=committee_max_iterations,
+        daily_closes_fetcher=daily_closes_fetcher,
+        today_provider=today_provider,
+        dividends_fetcher=dividends_fetcher,
+        benchmark_closes_fetcher=benchmark_closes_fetcher,
+    )
+    for build in (system, market_pulse, news_classifier, filings_rag):
+        app.include_router(build.build_router(deps))
 
     @app.get("/api/portfolios", response_model=list[PortfolioOut])
     def list_portfolios(
@@ -1500,7 +1345,7 @@ def create_app(
                         currency=weighted.position.market_currency,
                     )
             except genai_errors.APIError as exc:
-                raise _llm_unavailable(exc) from exc
+                raise llm_unavailable(exc) from exc
 
             metrics = MetricsJson(
                 valuation_date=valuation_date,
@@ -1517,7 +1362,7 @@ def create_app(
             except ReportRejectedError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             except genai_errors.APIError as exc:
-                raise _llm_unavailable(exc) from exc
+                raise llm_unavailable(exc) from exc
 
             cost_usd = llm_client.total_cost_usd - cost_before
             row = repository.create_report(
@@ -2433,81 +2278,6 @@ def _require_own_aggregator(
 
 def _as_percent(fraction: Decimal) -> Decimal:
     return (fraction * 100).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-
-
-def _latest_brief_file(briefs_dir: Path) -> tuple[date_type, Path] | None:
-    if not briefs_dir.exists():
-        return None
-    dated_files = []
-    for path in briefs_dir.glob("*.md"):
-        try:
-            brief_date = date_type.fromisoformat(path.stem)
-        except ValueError:
-            continue
-        dated_files.append((brief_date, path))
-    if not dated_files:
-        return None
-    return max(dated_files, key=lambda item: item[0])
-
-
-def _parse_markdown_table(markdown: str, heading: str) -> tuple[list[str], list[list[str]]]:
-    """Generic pipe-table extractor -- doesn't hardcode column names, so a
-    future column added to `comparison_report.render_comparison_report()`
-    shows up here without a code change."""
-    lines = markdown.splitlines()
-    try:
-        start = next(i for i, line in enumerate(lines) if line.strip() == heading) + 1
-    except StopIteration:
-        return [], []
-
-    table_lines = []
-    for line in lines[start:]:
-        stripped = line.strip()
-        if not stripped:
-            if table_lines:
-                break
-            continue
-        if stripped.startswith("|"):
-            table_lines.append(stripped)
-        elif table_lines:
-            break
-    if len(table_lines) < 2:
-        return [], []
-
-    def cells(line: str) -> list[str]:
-        return [cell.strip() for cell in line.strip("|").split("|")]
-
-    columns = cells(table_lines[0])
-    rows = [cells(line) for line in table_lines[2:]]  # table_lines[1] is the "|---|" separator
-    return columns, rows
-
-
-def _parse_bullet_list(markdown: str, heading: str) -> list[str]:
-    lines = markdown.splitlines()
-    try:
-        start = next(i for i, line in enumerate(lines) if line.strip() == heading) + 1
-    except StopIteration:
-        return []
-
-    notes = []
-    for line in lines[start:]:
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            notes.append(stripped[2:])
-        elif notes:
-            break
-    return notes
-
-
-def _llm_unavailable(exc: genai_errors.APIError) -> HTTPException:
-    # Covers both ServerError (5xx, e.g. "model overloaded") and ClientError
-    # (4xx, e.g. Gemini's own rate limit) -- either way the report can't be
-    # generated right now, and the raw exception must not reach the owner as
-    # an opaque 500 (issue #204).
-    return HTTPException(
-        status_code=503,
-        detail=f"Model AI chwilowo niedostępny ({exc.message}) -- spróbuj ponownie za chwilę.",
-    )
 
 
 def _to_position_preview(position: Position) -> PositionPreviewOut:
