@@ -31,10 +31,22 @@ Prerequisites (manual, one-time):
    log in (`huggingface_hub.login()`), same as `bielik_lora_finetune.ipynb`.
 
 Run: `uv run python scripts/news_classifier_quantize_bielik.py`.
+
+Each step notes which adapter its output was built from
+(`<output>.adapter-sha256`, `inference/build_record.py`) and rebuilds when
+the adapter changes, so after retraining there is no need to delete the
+old outputs by hand (issue #6).
 """
 
 import subprocess
 from pathlib import Path
+
+from fin_ai_lab.news_classifier.inference.build_record import (
+    adapter_fingerprint,
+    discard_stale,
+    is_built_from,
+    record_built_from,
+)
 
 MODEL_ID = "speakleash/Bielik-1.5B-v3.0-Instruct"
 ADAPTER_DIR = Path("data/private/bielik_lora_adapter")
@@ -54,9 +66,20 @@ GGUF_OUT_PATH = Path("data/private/bielik_quantized/model.gguf")
 QUANT_TYPE = "Q4_K_M"
 
 
-def merge_adapter() -> None:
-    if MERGED_DIR.exists():
-        print(f"{MERGED_DIR} already exists, skipping merge")
+def _is_current(output: Path, fingerprint: str, step: str) -> bool:
+    """True when `output` was built from this adapter; otherwise clears
+    whatever stale output is there, so the step rebuilds from scratch."""
+    if is_built_from(output, fingerprint):
+        print(f"{output} already built from this adapter, skipping {step}")
+        return True
+    if output.exists():
+        print(f"{output} was built from a different or unknown adapter, redoing {step}")
+    discard_stale(output)
+    return False
+
+
+def merge_adapter(fingerprint: str) -> None:
+    if _is_current(MERGED_DIR, fingerprint, "merge"):
         return
 
     from peft import PeftModel
@@ -72,12 +95,12 @@ def merge_adapter() -> None:
     MERGED_DIR.mkdir(parents=True, exist_ok=True)
     merged.save_pretrained(MERGED_DIR)
     tokenizer.save_pretrained(MERGED_DIR)
+    record_built_from(MERGED_DIR, fingerprint)
     print(f"Saved merged model to {MERGED_DIR}")
 
 
-def convert_to_gguf() -> None:
-    if GGUF_F16_PATH.exists():
-        print(f"{GGUF_F16_PATH} already exists, skipping conversion")
+def convert_to_gguf(fingerprint: str) -> None:
+    if _is_current(GGUF_F16_PATH, fingerprint, "conversion"):
         return
 
     convert_script = LLAMA_CPP_DIR / "convert_hf_to_gguf.py"
@@ -104,11 +127,11 @@ def convert_to_gguf() -> None:
         ],
         check=True,
     )
+    record_built_from(GGUF_F16_PATH, fingerprint)
 
 
-def quantize() -> None:
-    if GGUF_OUT_PATH.exists():
-        print(f"{GGUF_OUT_PATH} already exists, skipping quantization")
+def quantize(fingerprint: str) -> None:
+    if _is_current(GGUF_OUT_PATH, fingerprint, "quantization"):
         return
 
     from llama_cpp import llama_cpp as lcpp
@@ -121,13 +144,16 @@ def quantize() -> None:
     )
     if return_code != 0:
         raise RuntimeError(f"llama_model_quantize failed with code {return_code}")
+    record_built_from(GGUF_OUT_PATH, fingerprint)
     print(f"Quantized ({QUANT_TYPE}) model written to {GGUF_OUT_PATH}")
 
 
 def main() -> None:
-    merge_adapter()
-    convert_to_gguf()
-    quantize()
+    # Fails before any step touches its output when the adapter is missing.
+    fingerprint = adapter_fingerprint(ADAPTER_DIR)
+    merge_adapter(fingerprint)
+    convert_to_gguf(fingerprint)
+    quantize(fingerprint)
 
 
 if __name__ == "__main__":
