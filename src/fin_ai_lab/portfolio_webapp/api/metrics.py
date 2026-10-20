@@ -8,14 +8,16 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from fin_ai_lab.portfolio_webapp import repository
 from fin_ai_lab.portfolio_webapp.api.common import (
-    base_currency_value,
     current_position_rows,
     get_db,
     position_row_to_domain,
 )
 from fin_ai_lab.portfolio_webapp.api.defaults import BASE_CURRENCY
 from fin_ai_lab.portfolio_webapp.api.deps import AppDeps
-from fin_ai_lab.portfolio_webapp.api.live_values import live_market_values
+from fin_ai_lab.portfolio_webapp.api.live_values import (
+    live_base_currency_values,
+    live_market_values,
+)
 from fin_ai_lab.portfolio_webapp.schemas import MetricsOut
 from fin_ai_lab.portfolio_xray.metrics.weights import compute_weights
 
@@ -37,17 +39,19 @@ def build_router(deps: AppDeps) -> APIRouter:
 
         rows = current_position_rows(connection, portfolio_id)
         fx_client = deps.fx_client_factory()
+        today = deps.today_provider()
         positions = [position_row_to_domain(row) for row in rows]
         live_values = await live_market_values(
-            positions, deps.price_ratio_fetcher, fx_client, deps.today_provider()
+            positions, deps.price_ratio_fetcher, fx_client, today
         )
-        positions_with_base_value = []
-        for position, live_value in zip(positions, live_values, strict=True):
-            if live_value is not None:
-                position = position.model_copy(update={"market_value": live_value})
-            positions_with_base_value.append(
-                (position, await base_currency_value(position, fx_client))
-            )
+        positions = [
+            position
+            if live_value is None
+            else position.model_copy(update={"market_value": live_value})
+            for position, live_value in zip(positions, live_values, strict=True)
+        ]
+        base_values = await live_base_currency_values(positions, fx_client, today)
+        positions_with_base_value = list(zip(positions, base_values, strict=True))
 
         try:
             weights = compute_weights(positions_with_base_value)

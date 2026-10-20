@@ -189,6 +189,38 @@ def _client_with_usd_quoted_positions(
 # USD/PLN on the Friday before the import and on the Friday before "today".
 _USD_RATES = {"USD": {date(2026, 9, 18): Decimal("4.00"), date(2026, 9, 25): Decimal("4.20")}}
 
+# EUR/PLN on the same two Fridays -- #4's case.
+_EUR_RATES = {"EUR": {date(2026, 9, 18): Decimal("4.20"), date(2026, 9, 25): Decimal("4.40")}}
+
+
+class _FakeFxDatedRatesOnly(_FakeFx):
+    """NBP answering dated requests (mid_rate) but no series request, like
+    NBP down once the import day's rate is already cached."""
+
+    def __init__(self, rates: dict[str, dict[date, Decimal]]) -> None:
+        super().__init__()
+        self._rates = rates
+
+    async def mid_rate(self, currency: str, as_of: date) -> Decimal:
+        if currency == "PLN":
+            return Decimal(1)
+        series = self._rates[currency]
+        return series[max(day for day in series if day <= as_of)]
+
+
+def _client_with_eur_account(tmp_path: Path, fx: _FakeFx) -> TestClient:
+    # No live price at all, so only the EUR -> PLN rate moves the value.
+    # "Today" is the Sunday a week after the 2026-09-20 (Sunday) imports.
+    app = create_app(
+        db_path=tmp_path / "test.duckdb",
+        openfigi_client_factory=lambda: None,
+        price_ratio_fetcher=lambda ticker, since: None,
+        quote_currency_fetcher=lambda ticker: None,
+        fx_client_factory=lambda: fx,
+        today_provider=lambda: date(2026, 9, 27),
+    )
+    return TestClient(app)
+
 
 def _client_with_traces_dir(tmp_path: Path, traces_dir: Path) -> TestClient:
     app = create_app(
@@ -1562,6 +1594,42 @@ def test_metrics_use_live_value_moved_by_fx_rate(tmp_path: Path) -> None:
         assert response.status_code == 200
         # 2882.68 + 55.97: each position's live value, USD/PLN +5% (#283).
         assert Decimal(response.json()["total_value"]) == Decimal("2938.65")
+
+
+def test_metrics_convert_non_pln_account_at_todays_rate(tmp_path: Path) -> None:
+    with _client_with_eur_account(tmp_path, _FakeFx(_EUR_RATES)) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(
+            client,
+            portfolio_id,
+            build_synthetic_xtb_workbook(account_currency="EUR"),
+            "2026-09-20",
+        )
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/metrics")
+
+        assert response.status_code == 200
+        body = response.json()
+        # 2798.71 EUR at today's 4.40, not the import day's 4.20 (#4).
+        assert Decimal(body["total_value"]) == Decimal("12314.324")
+        assert body["allocation_by_currency"] == {"EUR": "100.0"}
+
+
+def test_metrics_keep_import_day_rate_when_todays_rate_is_unavailable(tmp_path: Path) -> None:
+    with _client_with_eur_account(tmp_path, _FakeFxDatedRatesOnly(_EUR_RATES)) as client:
+        portfolio_id = _create_portfolio(client)
+        _import(
+            client,
+            portfolio_id,
+            build_synthetic_xtb_workbook(account_currency="EUR"),
+            "2026-09-20",
+        )
+
+        response = client.get(f"/api/portfolios/{portfolio_id}/metrics")
+
+        assert response.status_code == 200
+        # 2798.71 EUR at the import day's 4.20 -- the rule before #4.
+        assert Decimal(response.json()["total_value"]) == Decimal("11754.582")
 
 
 def test_metrics_include_manual_positions(client: TestClient) -> None:

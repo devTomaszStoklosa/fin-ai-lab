@@ -1,4 +1,5 @@
-"""Live market values of positions: today's price and FX moves since import."""
+"""Live market values of positions: today's price and FX moves since import,
+and today's rate to PLN."""
 
 import asyncio
 from collections.abc import Callable
@@ -7,14 +8,22 @@ from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from fin_ai_lab.portfolio_webapp import repository
+from fin_ai_lab.portfolio_webapp.api.common import base_currency_value
 from fin_ai_lab.portfolio_webapp.api.defaults import BASE_CURRENCY
-from fin_ai_lab.portfolio_webapp.valuation import MissingFxRateError, fx_currency_code, fx_move
+from fin_ai_lab.portfolio_webapp.valuation import (
+    MissingFxRateError,
+    base_rate_lookup,
+    fx_currency_code,
+    fx_move,
+)
 from fin_ai_lab.portfolio_webapp.valuation_builder import FxSeriesClient
 from fin_ai_lab.portfolio_webapp.yahoo_ticker import position_yahoo_ticker
 from fin_ai_lab.portfolio_xray.canonical import Position
+from fin_ai_lab.portfolio_xray.metrics.fx import NbpFxClient
 
-# Margin before an import date for its NBP rate: an import made on a
-# weekend or holiday is valued at the last rate published before it.
+# Margin before a date for its NBP rate: an import made, or a live value
+# asked for, on a weekend or holiday is valued at the last rate published
+# before it.
 _LIVE_FX_LOOKBACK = timedelta(days=10)
 
 
@@ -35,6 +44,45 @@ async def live_market_values(
         None if ratio is None else _live_market_value(position, ratio, fx_rates, today)
         for position, ratio in zip(positions, ratios, strict=True)
     ]
+
+
+async def live_base_currency_values(
+    positions: list[Position], fx_client: NbpFxClient, today: date_type
+) -> list[Decimal]:
+    # Each position's value in PLN at the last NBP rate published on or
+    # before today, not at its import day's rate (#4) -- the rate the
+    # day-by-day valuation uses for its last day, from the same series
+    # request, so both agree. A currency whose series can't be had falls
+    # back to the import day's rate, as before.
+    today_rates = await _today_base_rates(positions, fx_client, today)
+    values: list[Decimal] = []
+    for position in positions:
+        rate = today_rates.get(position.market_currency or "")
+        if position.market_value is not None and rate is not None:
+            values.append(position.market_value * rate)
+        else:
+            values.append(await base_currency_value(position, fx_client))
+    return values
+
+
+async def _today_base_rates(
+    positions: list[Position], fx_client: FxSeriesClient, today: date_type
+) -> dict[str, Decimal]:
+    currencies = {
+        position.market_currency
+        for position in positions
+        if position.market_value is not None and position.market_currency is not None
+    } - {BASE_CURRENCY}
+    rates: dict[str, Decimal] = {}
+    for currency in sorted(currencies):
+        try:
+            series = await fx_client.mid_rate_series(currency, today - _LIVE_FX_LOOKBACK, today)
+            rates[currency] = base_rate_lookup(currency, {currency: series})(today)
+        except Exception:
+            # NBP down, or no rate in the lookback window -- the caller
+            # keeps the import day's rate for this currency.
+            continue
+    return rates
 
 
 def _live_market_value(
