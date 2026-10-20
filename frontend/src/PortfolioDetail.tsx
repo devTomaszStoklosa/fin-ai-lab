@@ -298,16 +298,18 @@ function PortfolioDetail({
             <span className="badge muted-badge">{portfolio.account_type}</span>
           )}
         </div>
-        <button
-          type="button"
-          className="btn-ghost agg-nav-link"
-          onClick={() => setShowCommitteeAnalysis(true)}
-        >
-          Analiza AI
-        </button>
-        <button type="button" className="btn-ghost" onClick={() => setShowAggregators(true)}>
-          Agregaty
-        </button>
+        <div className="detail-header-actions">
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => setShowCommitteeAnalysis(true)}
+          >
+            Analiza AI
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => setShowAggregators(true)}>
+            Agregaty
+          </button>
+        </div>
       </header>
 
       {loadError && <p className="error">{loadError}</p>}
