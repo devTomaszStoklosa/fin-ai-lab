@@ -269,6 +269,7 @@
 
 .detail-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 12px;
   margin-bottom: 24px;
@@ -276,6 +277,13 @@
 
 .detail-header h1 {
   font-size: 26px;
+}
+
+/* One block, so on a narrow screen both buttons wrap together and stay right-aligned. */
+.detail-header-actions {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
 }
 
 .detail-actions {
@@ -287,6 +295,29 @@
 .detail-actions .btn-ghost {
   margin-top: 30px;
   padding: 10px 16px;
+}
+
+/* #3: on phones the buttons drop below the import form instead of widening the page. */
+@media (max-width: 640px) {
+  .detail-actions {
+    flex-wrap: wrap;
+    margin-bottom: 40px;
+  }
+
+  .detail-actions .import-form {
+    flex-basis: 100%;
+    min-width: 0;
+    margin-bottom: 0;
+  }
+
+  /* The file input's built-in minimum width is wider than a 360 px screen allows. */
+  .detail-actions .import-form input {
+    min-width: 0;
+  }
+
+  .detail-actions .btn-ghost {
+    margin-top: 0;
+  }
 }
 
 .import-form {
@@ -664,10 +695,6 @@
 
 .mono {
   font-family: 'IBM Plex Mono', monospace;
-}
-
-.agg-nav-link {
-  margin-left: auto;
 }
 
 .agg-header {
@@ -1498,15 +1525,19 @@
   flex-wrap: wrap;
 }
 
+/* 300 px wide, smaller only when the card is narrower (#3: 320 px phones). */
 .shares-chart {
   position: relative;
   width: 300px;
-  height: 300px;
+  max-width: 100%;
+  aspect-ratio: 1;
   flex: none;
 }
 
 .shares-chart svg {
   display: block;
+  width: 100%;
+  height: auto;
 }
 
 .share-slice {
@@ -1521,10 +1552,10 @@
 
 .shares-center {
   position: absolute;
-  left: 75px;
-  top: 75px;
-  width: 150px;
-  height: 150px;
+  left: 25%;
+  top: 25%;
+  width: 50%;
+  height: 50%;
   display: flex;
   flex-direction: column;
   align-items: center;
