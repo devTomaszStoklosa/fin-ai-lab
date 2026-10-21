@@ -47,5 +47,5 @@ Naprawa: notebook ma teraz `MAX_LENGTH = 1024` i przed treningiem liczy tokeny k
 
 Ponowny przebieg po naprawie:
 
-1. Uruchom `bielik_lora_finetune.ipynb` w Colab od nowa (notebook klonuje gałąź `main`, więc poprawka musi być zmergowana) i skopiuj nowy adapter z Drive do `data/private/bielik_lora_adapter/`.
+1. Uruchom `bielik_lora_finetune.ipynb` w Colab od nowa (notebook klonuje gałąź `main`, więc poprawka musi być zmergowana) i skopiuj nowy adapter z Drive do `data/private/bielik_lora_adapter/`. Ten sam trening obejmuje poprawkę [issue #7](https://github.com/devTomaszStoklosa/fin-ai-lab/issues/7): wcześniej trening i ewaluacja w notebooku dawały modelowi dwa tokeny początku tekstu (BOS), a llama.cpp daje jeden.
 2. `uv run python scripts/news_classifier_quantize_bielik.py`, potem `fin-ai-lab eval p4-classifier-quantized --split test` i porównanie z dotychczasowym wynikiem (macro-F1 = 0). Starych wyników nie trzeba usuwać ręcznie: przy każdym z nich skrypt zapisuje odcisk adaptera (plik `<wynik>.adapter-sha256`) i sam przebudowuje te, które powstały z innego adaptera ([issue #6](https://github.com/devTomaszStoklosa/fin-ai-lab/issues/6)).
