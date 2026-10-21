@@ -36,17 +36,30 @@ Each step notes which adapter its output was built from
 (`<output>.adapter-sha256`, `inference/build_record.py`) and rebuilds when
 the adapter changes, so after retraining there is no need to delete the
 old outputs by hand (issue #6).
+
+Before converting, the merged tokenizer config gets the special tokens
+llama.cpp's converter would otherwise miss; after every run, the script
+checks that llama.cpp turns the classification prompt into exactly the
+tokens transformers does (issue #7, `inference/conversion_tokenizer.py`).
 """
 
+import json
 import subprocess
 from pathlib import Path
 
+from fin_ai_lab.core.prompts.registry import PromptRegistry
 from fin_ai_lab.news_classifier.inference.build_record import (
     adapter_fingerprint,
     discard_stale,
     is_built_from,
     record_built_from,
 )
+from fin_ai_lab.news_classifier.inference.conversion_tokenizer import (
+    first_mismatch,
+    with_additional_special_tokens,
+)
+from fin_ai_lab.news_classifier.inference.quantized import PROMPTS_DIR, TOKENIZER_KV_OVERRIDES
+from fin_ai_lab.news_classifier.ticker_catalog import TICKER_CATALOG
 
 MODEL_ID = "speakleash/Bielik-1.5B-v3.0-Instruct"
 ADAPTER_DIR = Path("data/private/bielik_lora_adapter")
@@ -64,6 +77,15 @@ GGUF_OUT_PATH = Path("data/private/bielik_quantized/model.gguf")
 # (size vs. quality) for a model this small — not tuned against this
 # corpus, revisit if P4-S7's comparison report shows it's the bottleneck.
 QUANT_TYPE = "Q4_K_M"
+
+# Synthetic (headline, lead) pairs for the tokenizer check: Polish
+# diacritics, digits and a ticker, run through the real classification
+# prompt -- so every chat marker and the JSON instructions are covered too.
+TOKENIZER_CHECK_HEADLINES = [
+    ("Orlen podaje wyniki finansowe za III kwartał", "Zysk netto wzrósł o 12% r/r."),
+    ("KGHM obniża prognozę wydobycia miedzi", ""),
+    ("Zarząd PKO BP rekomenduje wypłatę dywidendy", "Łącznie 5,2 zł na akcję."),
+]
 
 
 def _is_current(output: Path, fingerprint: str, step: str) -> bool:
@@ -99,6 +121,22 @@ def merge_adapter(fingerprint: str) -> None:
     print(f"Saved merged model to {MERGED_DIR}")
 
 
+def add_special_tokens_for_converter(merged_dir: Path) -> None:
+    """Issue #7: the converter's transformers 4.x can't see the special
+    tokens transformers 5 saved under `extra_special_tokens` (see
+    `conversion_tokenizer.py`) -- list them where it looks. Done right
+    before converting, not when merging, because merging is skipped while
+    the adapter stays the same."""
+    config_path = merged_dir / "tokenizer_config.json"
+    tokenizer_config = json.loads(config_path.read_text(encoding="utf-8"))
+    tokenizer_json = json.loads((merged_dir / "tokenizer.json").read_text(encoding="utf-8"))
+    updated = with_additional_special_tokens(tokenizer_config, tokenizer_json)
+    config_path.write_text(
+        json.dumps(updated, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(f"Listed for the converter: {updated['additional_special_tokens']}")
+
+
 def convert_to_gguf(fingerprint: str) -> None:
     if _is_current(GGUF_F16_PATH, fingerprint, "conversion"):
         return
@@ -114,6 +152,7 @@ def convert_to_gguf(fingerprint: str) -> None:
             " (see this script's docstring)"
         )
 
+    add_special_tokens_for_converter(MERGED_DIR)
     GGUF_F16_PATH.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
@@ -148,12 +187,63 @@ def quantize(fingerprint: str) -> None:
     print(f"Quantized ({QUANT_TYPE}) model written to {GGUF_OUT_PATH}")
 
 
+def check_tokenizer() -> None:
+    """Issue #7: fail unless llama.cpp, loaded the way `classify_quantized`
+    loads it, turns the classification prompt into exactly the tokens
+    transformers does -- the tokens the model is fine-tuned on. Runs even
+    when every step above was skipped, so an older GGUF is caught too."""
+    from llama_cpp import Llama  # pyright: ignore[reportMissingImports]  # extra "quantized"
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(MERGED_DIR)
+    llm = Llama(
+        model_path=str(GGUF_OUT_PATH),
+        vocab_only=True,
+        verbose=False,
+        kv_overrides=TOKENIZER_KV_OVERRIDES,
+    )
+    prompts = PromptRegistry()
+    prompts.load_dir(PROMPTS_DIR)
+    prompt = prompts.get("bielik_sft", 1)
+    catalog_json = json.dumps(TICKER_CATALOG, ensure_ascii=False)
+
+    for headline, lead in TOKENIZER_CHECK_HEADLINES:
+        rendered = prompt.render(headline=headline, lead=lead, ticker_catalog_json=catalog_json)
+        text = tokenizer.apply_chat_template(
+            [{"role": "user", "content": rendered}], tokenize=False, add_generation_prompt=True
+        )
+        expected = tokenizer(text, add_special_tokens=False)["input_ids"]
+        # What llama-cpp-python's create_chat_completion does with the
+        # template it renders: special tokens parsed, no extra BOS.
+        actual = llm.tokenize(text.encode("utf-8"), add_bos=False, special=True)
+        position = first_mismatch(expected, actual)
+        if position is not None:
+            shown = slice(position, position + 8)
+            llama_pieces = [
+                llm.detokenize([token], special=True).decode("utf-8", "replace")
+                for token in actual[shown]
+            ]
+            raise RuntimeError(
+                f"llama.cpp tokenizes the prompt for '{headline}' differently from"
+                f" transformers, starting at token {position}:\n"
+                f"  transformers: {tokenizer.convert_ids_to_tokens(expected[shown])}\n"
+                f"  llama.cpp:    {llama_pieces}\n"
+                f"Delete {GGUF_F16_PATH.parent} and run this script again to rebuild"
+                " the GGUF from the same adapter."
+            )
+    print(
+        f"Tokenizer check passed: llama.cpp matches transformers on"
+        f" {len(TOKENIZER_CHECK_HEADLINES)} classification prompts"
+    )
+
+
 def main() -> None:
     # Fails before any step touches its output when the adapter is missing.
     fingerprint = adapter_fingerprint(ADAPTER_DIR)
     merge_adapter(fingerprint)
     convert_to_gguf(fingerprint)
     quantize(fingerprint)
+    check_tokenizer()
 
 
 if __name__ == "__main__":

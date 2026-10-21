@@ -10,6 +10,14 @@ from fin_ai_lab.news_classifier.ticker_catalog import TICKER_CATALOG
 
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
+# Issue #7: llama.cpp puts a space after every special token, as
+# transformers 4.x does; transformers 5, which the model is fine-tuned
+# with, doesn't. The GGUF can't carry this itself (see
+# conversion_tokenizer.py), so it's set at load time instead.
+TOKENIZER_KV_OVERRIDES: dict[str, bool | int | float | str] = {
+    "tokenizer.ggml.add_space_prefix": False
+}
+
 
 class ChatCompletionClient(Protocol):
     """Just enough of `llama_cpp.Llama`'s interface for `classify_quantized`
@@ -34,7 +42,12 @@ def load_llm(model_path: Path) -> ChatCompletionClient:
     # 512 was too small once #142's vocab-conversion fix made tokenization
     # correct again — the real (correctly tokenized) prompt, including the
     # ticker catalog, runs 640-670 tokens; 2048 leaves headroom to grow.
-    return Llama(model_path=str(model_path), n_ctx=2048, verbose=False)
+    return Llama(
+        model_path=str(model_path),
+        n_ctx=2048,
+        verbose=False,
+        kv_overrides=TOKENIZER_KV_OVERRIDES,
+    )
 
 
 def _build_label_grammar() -> object:
