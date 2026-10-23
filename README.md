@@ -115,6 +115,9 @@ The detailed documentation is in Polish, the language I learn in; code, prompts 
 
 | Document | Contents |
 |---|---|
+| [docs/PROJECT.md](docs/PROJECT.md) | project overview: map of projects and their state, architecture rules, glossary |
+| [docs/reference/](docs/reference/) | per-module reference: core, P1–P5, web app backend and frontend |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | install, configuration, CLI commands, scheduled tasks, CI, troubleshooting |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | projects, slices, order, state |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | repo layout, shared modules, flows |
 | [docs/EVALS.md](docs/EVALS.md) | eval methodology and file formats |

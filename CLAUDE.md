@@ -69,6 +69,9 @@ Intel i5-2500K **bez AVX2**, 8 GB RAM, **bez GPU NVIDIA**, Windows 10. Część 
 
 | Jeśli pracujesz nad… | Czytaj… |
 |---|---|
+| przeglądem projektu, stanem projektów | [docs/PROJECT.md](docs/PROJECT.md) |
+| kodem konkretnego modułu (jak działa) | [docs/reference/](docs/reference/) |
+| uruchamianiem, konfiguracją, komendami CLI | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
 | układem repo, modułami core, kontraktami | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | evalami, zbiorami, graderami | [docs/EVALS.md](docs/EVALS.md) |
 | wywołaniami Gemini, kosztami | [docs/LLM-API.md](docs/LLM-API.md) |
