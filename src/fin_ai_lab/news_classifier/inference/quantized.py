@@ -69,6 +69,7 @@ def classify_quantized(
     model_path: Path | None = None,
     *,
     llm: ChatCompletionClient | None = None,
+    use_grammar: bool = True,
 ) -> Label:
     """P4-S6 (REQ-021): local CPU inference of the quantized, LoRA
     fine-tuned Bielik (`scripts/news_classifier_quantize_bielik.py`'s
@@ -83,12 +84,15 @@ def classify_quantized(
 
     `llm` is an injected chat-completion client (SOLID D) — `load_llm`
     builds a real one from `model_path` when `llm` isn't given, but a
-    test can pass a stub instead."""
+    test can pass a stub instead. `use_grammar` controls JSON-schema
+    constrained decoding independently from how the client was obtained."""
     grammar = None
     if llm is None:
         if model_path is None:
             raise ValueError("classify_quantized needs either model_path or llm")
         llm = load_llm(model_path)
+
+    if use_grammar:
         grammar = _build_label_grammar()
 
     prompts = PromptRegistry()

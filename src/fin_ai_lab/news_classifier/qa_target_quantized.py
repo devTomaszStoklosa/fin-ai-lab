@@ -24,5 +24,5 @@ def _llm() -> ChatCompletionClient:
 
 async def quantized_target(case_input: dict, _ctx: RunContext) -> dict:
     headline = Headline(**case_input)
-    label = classify_quantized(headline, llm=_llm())
+    label = classify_quantized(headline, llm=_llm(), use_grammar=True)
     return label.model_dump()
