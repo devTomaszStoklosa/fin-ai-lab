@@ -2,8 +2,9 @@ from datetime import datetime
 
 import pytest
 
+import fin_ai_lab.news_classifier.inference.quantized as quantized
 from fin_ai_lab.news_classifier.inference.quantized import classify_quantized
-from fin_ai_lab.news_classifier.models import Headline
+from fin_ai_lab.news_classifier.models import Headline, Label
 
 
 def _headline() -> Headline:
@@ -37,7 +38,7 @@ def test_classify_quantized_parses_a_valid_json_response() -> None:
         '{"sentiment": "positive", "event_type": "wyniki finansowe", "tickers": ["PKN"]}'
     )
 
-    label = classify_quantized(_headline(), llm=llm)
+    label = classify_quantized(_headline(), llm=llm, use_grammar=False)
 
     assert label.sentiment == "positive"
     assert label.event_type == "wyniki finansowe"
@@ -48,7 +49,7 @@ def test_classify_quantized_raises_on_invalid_json() -> None:
     llm = _StubLlm("not json at all")
 
     with pytest.raises(ValueError, match="did not match Label schema"):
-        classify_quantized(_headline(), llm=llm)
+        classify_quantized(_headline(), llm=llm, use_grammar=False)
 
 
 def test_classify_quantized_raises_on_out_of_enum_value() -> None:
@@ -57,7 +58,7 @@ def test_classify_quantized_raises_on_out_of_enum_value() -> None:
     )
 
     with pytest.raises(ValueError, match="did not match Label schema"):
-        classify_quantized(_headline(), llm=llm)
+        classify_quantized(_headline(), llm=llm, use_grammar=False)
 
 
 def test_classify_quantized_requires_model_path_or_llm() -> None:
@@ -65,17 +66,51 @@ def test_classify_quantized_requires_model_path_or_llm() -> None:
         classify_quantized(_headline())
 
 
-def test_classify_quantized_passes_no_grammar_for_an_injected_stub() -> None:
-    # The real Label-schema grammar (issue #160) is only built on the real
-    # load_llm() path -- an injected test stub never needed a real GGUF
-    # file or the `quantized` extra before, and still doesn't.
+def test_classify_quantized_can_disable_grammar_for_an_injected_stub() -> None:
     llm = _StubLlm(
         '{"sentiment": "positive", "event_type": "wyniki finansowe", "tickers": ["PKN"]}'
     )
 
-    classify_quantized(_headline(), llm=llm)
+    classify_quantized(_headline(), llm=llm, use_grammar=False)
 
     assert llm.last_grammar is None
+
+
+def test_classify_quantized_can_enable_grammar_for_an_injected_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grammar = object()
+    monkeypatch.setattr(quantized, "_build_label_grammar", lambda: grammar)
+    llm = _StubLlm(
+        '{"sentiment": "positive", "event_type": "wyniki finansowe", "tickers": ["PKN"]}'
+    )
+
+    classify_quantized(_headline(), llm=llm, use_grammar=True)
+
+    assert llm.last_grammar is grammar
+
+
+@pytest.mark.asyncio
+async def test_quantized_target_explicitly_enables_grammar(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fin_ai_lab.news_classifier import qa_target_quantized
+
+    seen: dict[str, object] = {}
+
+    def fake_classify(headline: Headline, *, llm: object, use_grammar: bool) -> Label:
+        seen["headline"] = headline
+        seen["llm"] = llm
+        seen["use_grammar"] = use_grammar
+        return Label(sentiment="neutral", event_type="inne", tickers=[])
+
+    client = object()
+    monkeypatch.setattr(qa_target_quantized, "_llm", lambda: client)
+    monkeypatch.setattr(qa_target_quantized, "classify_quantized", fake_classify)
+
+    result = await qa_target_quantized.quantized_target(_headline().model_dump(), None)
+
+    assert result == {"sentiment": "neutral", "event_type": "inne", "tickers": []}
+    assert seen["llm"] is client
+    assert seen["use_grammar"] is True
 
 
 def test_build_label_grammar_constructs_from_the_real_schema() -> None:

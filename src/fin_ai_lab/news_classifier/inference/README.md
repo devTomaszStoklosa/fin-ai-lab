@@ -25,6 +25,8 @@
 
 Po konwersji: `fin-ai-lab eval p4-classifier-quantized --split test`, potem `fin-ai-lab news-classifier compare-report` (P4-S7) obejmie już piąty model.
 
+Ewaluacja `p4-classifier-quantized` mierzy ten sam tryb co produkcyjna inferencja: z włączoną gramatyką JSON opartą na schemacie `Label`. `classify_quantized` przyjmuje ten wybór jawnie przez `use_grammar`, niezależnie od tego, czy klient został utworzony wewnątrz funkcji, czy wstrzyknięty; target ewaluacji przekazuje `use_grammar=True` także dla cache'owanego klienta.
+
 ## Znane ograniczenia
 
 ### Naprawione (2026-09-20): pusta odpowiedź modelu po konwersji — issue 142 w prywatnym archiwum
