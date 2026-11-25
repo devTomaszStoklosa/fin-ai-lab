@@ -6,11 +6,11 @@ REQ-020: macro-F1 (sentiment, event type), koszt/1000 nagłówków, latencja p50
 
 | Model | n | sentiment macro-F1 | event_type macro-F1 | koszt/1000 (USD) | latency p50 (ms) | latency p95 (ms) |
 |---|---|---|---|---|---|---|
-| majority | 13 | 0.211 | 0.152 | 0.0000 | 0.0 | 6.0 |
-| tfidf | 13 | 0.211 | 0.152 | 0.0000 | 0.0 | 40.4 |
-| few-shot | 13 | 0.562 | 0.492 | 0.3284 | 2875.0 | 12831.2 |
-| herbert | 13 | 0.211 | 0.152 | 0.0000 | 468.0 | 12494.2 |
-| quantized | 13 | 0.000 | 0.000 | 0.0000 | 0.0 | 197.2 |
+| majority | 13 | 0.211 | 0.152 | 0.0000 | 0.0 | 90.4 |
+| tfidf | 13 | 0.211 | 0.245 | 0.0000 | 0.0 | 827.8 |
+| few-shot | 13 | 0.582 | 0.554 | 0.3054 | 4889.0 | 9809.0 |
+| herbert | 13 | 0.211 | 0.152 | 0.0000 | 547.0 | 2702.4 |
+| quantized | 13 | 0.089 | 0.141 | 0.0000 | 47922.0 | 57971.4 |
 
 ## Klasy bez wsparcia w zbiorze testowym
 
@@ -19,4 +19,4 @@ REQ-020 edge case: rzadkie typy zdarzeń zgłoszone tu, nie ukryte uśrednieniem
 - **tfidf**: brak przykładów dla: wyniki finansowe, dywidenda, emisja akcji, skup akcji, przejęcie lub fuzja, zmiana w zarządzie, decyzja lub kara regulatora, umowa lub kontrakt
 - **few-shot**: brak przykładów dla: wyniki finansowe, dywidenda, emisja akcji, skup akcji, przejęcie lub fuzja, zmiana w zarządzie, decyzja lub kara regulatora, umowa lub kontrakt
 - **herbert**: brak przykładów dla: wyniki finansowe, dywidenda, emisja akcji, skup akcji, przejęcie lub fuzja, zmiana w zarządzie, decyzja lub kara regulatora, umowa lub kontrakt
-- **quantized**: brak przykładów dla: wyniki finansowe, dywidenda, emisja akcji, skup akcji, przejęcie lub fuzja, zmiana w zarządzie, prognoza, decyzja lub kara regulatora, spór prawny, umowa lub kontrakt, rekomendacja lub rating, makro, inne
+- **quantized**: brak przykładów dla: wyniki finansowe, dywidenda, emisja akcji, skup akcji, przejęcie lub fuzja, zmiana w zarządzie, decyzja lub kara regulatora, umowa lub kontrakt
