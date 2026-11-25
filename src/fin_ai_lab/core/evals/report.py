@@ -19,6 +19,7 @@ def render_report(
         f"- started_at: {summary.started_at.isoformat()}",
         f"- finished_at: {summary.finished_at.isoformat() if summary.finished_at else '-'}",
         f"- incomplete: {summary.incomplete}",
+        f"- target_errors: {summary.target_errors}",
         "",
         "## Metrics",
         "",

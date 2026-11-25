@@ -12,7 +12,7 @@ import typer
 
 from fin_ai_lab.core.config import Settings
 from fin_ai_lab.core.errors import BudgetExceeded, SuiteError
-from fin_ai_lab.core.evals.runner import run_suite
+from fin_ai_lab.core.evals.runner import baseline_allowed, run_suite
 from fin_ai_lab.core.llm.client import GeminiLlmClient, LlmClient
 from fin_ai_lab.core.llm.embeddings import GeminiEmbeddingClient
 from fin_ai_lab.core.llm.fake import FakeLlmClient
@@ -146,8 +146,19 @@ def eval_command(
         raise typer.Exit(code=1) from exc
 
     typer.echo(f"Run written to {run_dir}")
-    typer.echo(f"Cost: {summary.cost_usd} USD, incomplete: {summary.incomplete}")
+    typer.echo(
+        f"Cost: {summary.cost_usd} USD, incomplete: {summary.incomplete}, "
+        f"target errors: {summary.target_errors}"
+    )
     if summary.incomplete:
+        raise typer.Exit(code=1)
+    if save_baseline and not baseline_allowed(summary):
+        typer.echo(
+            f"Baseline not saved: {summary.target_errors} case(s) failed with target_error "
+            "(usually an API outage or quota limit, see results.jsonl). Rerun once the "
+            "cause is gone.",
+            err=True,
+        )
         raise typer.Exit(code=1)
 
 

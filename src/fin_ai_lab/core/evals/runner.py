@@ -22,6 +22,7 @@ from fin_ai_lab.core.prompts.registry import PromptRegistry
 
 RUNS_DIR = Path("evals/runs")
 BASELINES_DIR = Path("evals/baselines")
+TARGET_ERROR_PREFIX = "target_error"
 
 
 async def run_suite(
@@ -98,10 +99,21 @@ async def run_suite(
         report_text = render_report(suite, summary, case_results, baseline)
         (run_dir / "report.md").write_text(report_text, encoding="utf-8")
 
-    if not incomplete and save_baseline:
+    if save_baseline and baseline_allowed(summary):
         _save_baseline(baselines_dir, suite.name, summary)
 
     return summary, run_dir
+
+
+def baseline_allowed(summary: RunSummary) -> bool:
+    """Issue #36: a baseline is what later runs are compared against, so it
+    must record the model's behavior, not an outage. An interrupted run is
+    out, and so is a run where any target raised: in practice that's a
+    provider outage or quota limit (503 UNAVAILABLE, 429 RESOURCE_EXHAUSTED)
+    or an index that couldn't be built, and saving it would make a later,
+    healthy run look like an improvement and an outage look like a model
+    regression."""
+    return not summary.incomplete and summary.target_errors == 0
 
 
 async def _execute_case(
@@ -135,7 +147,7 @@ async def _execute_case(
                 tags=case.tags,
                 passed=False,
                 grades={},
-                error=f"target_error: {type(exc).__name__}: {exc}",
+                error=f"{TARGET_ERROR_PREFIX}: {type(exc).__name__}: {exc}",
                 cost_usd=Decimal(0),
                 latency_ms=int((time.monotonic() - started) * 1000),
                 cache_hit=False,
@@ -242,6 +254,11 @@ def _build_summary(
     total_cost = sum((result.cost_usd for result in case_results), Decimal(0))
     latencies = sorted(result.latency_ms for result in case_results)
     cache_hits = sum(1 for result in case_results if result.cache_hit)
+    target_errors = sum(
+        1
+        for result in case_results
+        if result.error is not None and result.error.startswith(TARGET_ERROR_PREFIX)
+    )
 
     return RunSummary(
         suite=suite.name,
@@ -256,6 +273,7 @@ def _build_summary(
         cost_usd=total_cost,
         case_count=len(case_results),
         cache_hits=cache_hits,
+        target_errors=target_errors,
         latency_p50_ms=_percentile(latencies, 50),
         latency_p95_ms=_percentile(latencies, 95),
         metrics=_compute_metrics(case_results),

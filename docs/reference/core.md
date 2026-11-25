@@ -129,7 +129,7 @@ flowchart LR
 3. Przypadki idą równolegle (`concurrency` 1–16, domyślnie 4), każdy `repeats` razy (1–10). Wyjątek w celu daje porażkę `target_error`, wyjątek gradera `grader_error`.
 4. **Cache** (`data/cache/evals/`): wynik celu jest kluczowany hashem (cel, wejście, wersje promptów, model, `effort`, numer powtórzenia). Zmiana samego gradera nie kosztuje ponownego wywołania modelu.
 5. Wyniki trafiają do `evals/runs/<czas>-<4 znaki>-<suita>/` (`results.jsonl`, `summary.json`, `report.md`). Przerwanie (Ctrl+C) zapisuje częściowe wyniki z `incomplete = true`.
-6. `--save-baseline` zapisuje `evals/baselines/<suita>.json`, ale tylko dla przebiegu zakończonego.
+6. `--save-baseline` zapisuje `evals/baselines/<suita>.json`, ale tylko dla przebiegu zakończonego, w którym żaden przypadek nie skończył się `target_error` (`summary.target_errors == 0`). Taki błąd to w praktyce awaria albo limit dostawcy (503, 429) lub niezbudowany indeks, a nie odpowiedź modelu, więc baseline zapisałby awarię jako porażkę modelu ([issue #36](https://github.com/devTomaszStoklosa/fin-ai-lab/issues/36)). CLI wypisuje wtedy powód i kończy się kodem 1.
 
 ### Cel (`target`)
 
