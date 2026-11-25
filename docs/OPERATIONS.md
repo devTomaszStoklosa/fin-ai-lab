@@ -165,7 +165,7 @@ uv run pytest -q
 ```
 
 - `ruff`: reguły `E`, `F`, `I`, `UP`, długość linii 100, Python 3.12.
-- `pyright`: tryb `basic`, tylko `src`.
+- `pyright`: tryb `basic`, tylko `src`. Bez extras `herbert` i `quantized` importy z `torch`, `transformers` i `llama_cpp` są nieznane, więc pyright nie sprawdza kodu, który z nich korzysta (CI ich nie instaluje). Po zmianie w `news_classifier/inference/` albo `qa_target_herbert.py` / `qa_target_quantized.py` uruchom `uv run --extra herbert --extra quantized pyright` lokalnie.
 - `pytest`: tryb asynchroniczny automatyczny, testy z `tests/`. Testy oznaczone `@pytest.mark.live` (prawdziwe API) są **domyślnie pomijane** (`-m 'not live'`). Aby je uruchomić: `uv run pytest -m live` (wymaga kluczy i zużywa limit).
 - Interfejs: `npm run lint` i `npm run build` w `frontend/`.
 
