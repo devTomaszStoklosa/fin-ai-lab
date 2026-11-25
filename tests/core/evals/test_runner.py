@@ -13,7 +13,7 @@ from fin_ai_lab.core.config import Settings
 from fin_ai_lab.core.errors import BudgetExceeded
 from fin_ai_lab.core.evals.cache import EvalCache
 from fin_ai_lab.core.evals.models import GraderSpec, Suite
-from fin_ai_lab.core.evals.runner import _effective_limit, run_suite
+from fin_ai_lab.core.evals.runner import _effective_limit, baseline_allowed, run_suite
 from fin_ai_lab.core.llm.fake import FakeLlmClient
 from fin_ai_lab.core.prompts.registry import PromptRegistry
 
@@ -142,6 +142,66 @@ async def test_run_suite_records_target_exception_as_case_error(tmp_path: Path) 
     results = (run_dir / "results.jsonl").read_text(encoding="utf-8")
     assert "target_error" in results
     assert summary.cases["c1"] is False
+    assert summary.target_errors == 1
+
+
+async def test_run_suite_skips_baseline_when_a_target_raised(tmp_path: Path) -> None:
+    # Issue #36: one case passes, the other fails on an outage-like error;
+    # the run must not become the baseline later runs are compared with.
+    suite_dir = tmp_path / "suites" / "outage"
+    with _temp_module(
+        tmp_path,
+        "demo_target_outage",
+        """
+        from decimal import Decimal
+
+        async def target(case_input, ctx):
+            if case_input["a"] == 99:
+                raise RuntimeError("503 UNAVAILABLE")
+            return {"sum": case_input["a"] + case_input["b"]}
+
+        async def estimate(case_input, ctx):
+            return Decimal(0)
+        """,
+    ):
+        _write_suite(
+            suite_dir,
+            "demo_target_outage:target",
+            [_case(1, 2, 3, case_id="c1"), _case(99, 0, 99, case_id="c2")],
+        )
+
+        summary, _run_dir = await run_suite(suite_dir, **_run_kwargs(tmp_path, save_baseline=True))
+
+    assert summary.incomplete is False
+    assert summary.target_errors == 1
+    assert baseline_allowed(summary) is False
+    assert not (tmp_path / "baselines" / "outage.json").exists()
+
+
+async def test_run_suite_saves_baseline_when_every_target_returned(tmp_path: Path) -> None:
+    # A wrong answer is a model failure, not an outage: it still counts.
+    suite_dir = tmp_path / "suites" / "healthy"
+    with _temp_module(
+        tmp_path,
+        "demo_target_healthy",
+        """
+        from decimal import Decimal
+
+        async def target(case_input, ctx):
+            return {"sum": 0}
+
+        async def estimate(case_input, ctx):
+            return Decimal(0)
+        """,
+    ):
+        _write_suite(suite_dir, "demo_target_healthy:target", [_case(1, 2, 3)])
+
+        summary, _run_dir = await run_suite(suite_dir, **_run_kwargs(tmp_path, save_baseline=True))
+
+    assert summary.target_errors == 0
+    assert summary.cases["c1"] is False
+    saved = json.loads((tmp_path / "baselines" / "healthy.json").read_text(encoding="utf-8"))
+    assert saved["cases"] == {"c1": False}
 
 
 async def test_run_suite_marks_incomplete_on_interruption(tmp_path: Path) -> None:

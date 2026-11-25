@@ -85,7 +85,7 @@ To jedyny plik P2, z którego korzystają inne projekty (aplikacja webowa, karta
 | `answer_target` | `p2-answer-accuracy` | to samo plus `build_answer`: odmowa, powód, liczba cytatów |
 | `web_answer_target` | `p2-web-answer-accuracy` | ścieżka aplikacji webowej: zapisany indeks, bez rerankera. Porównanie z `p2-answer-accuracy` pokazuje, ile kosztuje rezygnacja z rerankera. Po przebudowie indeksu uruchamiaj z `--no-cache` |
 
-Indeks do evali jest budowany raz na proces tym samym `build_index`, ale **ostrzej** niż komenda CLI: jeśli któraś spółka się nie zbuduje, eval się zatrzymuje (`EvalIndexIncompleteError`), zamiast działać na niepełnym indeksie, gdzie brak spółki wyglądałby jak błąd modelu. Brak plików GPW na komputerze nie jest błędem (spółka jest po cichu pomijana).
+Indeks do evali jest budowany raz na proces tym samym `build_index`, ale **ostrzej** niż komenda CLI: jeśli któraś spółka się nie zbuduje, cel rzuca `EvalIndexIncompleteError`, zamiast odpowiadać z niepełnego indeksu, gdzie brak spółki wyglądałby jak błąd modelu. Przypadek kończy się wtedy `target_error` (pozostałe przypadki idą dalej, te z cache są odtwarzane), a taki przebieg nie zapisze się jako baseline. Brak plików GPW na komputerze nie jest błędem (spółka jest po cichu pomijana).
 
 ## Prompty
 

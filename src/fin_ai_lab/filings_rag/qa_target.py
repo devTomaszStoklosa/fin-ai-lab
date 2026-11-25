@@ -39,13 +39,16 @@ _store: VectorStore | None = None
 
 
 class EvalIndexIncompleteError(RuntimeError):
-    """The eval's index couldn't be built for every company — the eval stops
-    instead of running on a partial index, where a missing company would
-    show up as a wrong answer, as if the model were at fault."""
+    """The eval's index couldn't be built for every company. Raised instead
+    of answering from a partial index, where a missing company would show
+    up as a wrong answer, as if the model were at fault. The runner records
+    it as the case's `target_error` (the other cases still run, cached ones
+    are replayed), and a run with any `target_error` never becomes a
+    baseline (issue #36)."""
 
     def __init__(self, failures: list[CompanyBuildStatus]) -> None:
         reasons = "; ".join(f"{status.company}: {status.skipped_reason}" for status in failures)
-        super().__init__(f"Filings index incomplete, eval stopped: {reasons}")
+        super().__init__(f"Filings index incomplete: {reasons}")
         self.failures = failures
 
 

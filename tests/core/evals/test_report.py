@@ -68,6 +68,16 @@ def test_render_report_lists_regressions_against_baseline() -> None:
     assert "c1" in report.split("### Regresje")[1]
 
 
+def test_render_report_shows_target_error_count() -> None:
+    summary = RunSummary(
+        suite="demo", dataset_version=1, started_at=_NOW, finished_at=_NOW, target_errors=2
+    )
+
+    report = render_report(_suite(), summary, [], baseline=None)
+
+    assert "- target_errors: 2" in report
+
+
 def test_render_report_skips_delta_when_dataset_version_differs() -> None:
     summary = RunSummary(
         suite="demo", dataset_version=2, started_at=_NOW, finished_at=_NOW, case_count=0

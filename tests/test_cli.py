@@ -80,3 +80,49 @@ def test_filings_rag_build_index_leaves_the_saved_index_alone_when_nothing_was_i
 
     assert result.exit_code == 1
     assert output.read_bytes() == b"earlier index"
+
+
+def _eval_summary(target_errors: int):
+    from datetime import UTC, datetime
+
+    from fin_ai_lab.core.evals.models import RunSummary
+
+    now = datetime.now(UTC)
+    return RunSummary(
+        suite="demo",
+        dataset_version=1,
+        started_at=now,
+        finished_at=now,
+        target_errors=target_errors,
+    )
+
+
+def test_eval_save_baseline_fails_loudly_when_a_target_raised(tmp_path, monkeypatch) -> None:
+    # Issue #36: the runner skipped the baseline; the user must hear why.
+    from fin_ai_lab import cli
+
+    async def fake_run_suite(suite_dir, **kwargs):
+        return _eval_summary(target_errors=1), tmp_path
+
+    monkeypatch.setattr(cli, "run_suite", fake_run_suite)
+
+    result = runner.invoke(app, ["eval", "demo", "--save-baseline"])
+
+    assert result.exit_code == 1
+    assert "Baseline not saved: 1 case(s) failed with target_error" in result.output
+
+
+def test_eval_without_save_baseline_still_succeeds_with_target_errors(
+    tmp_path, monkeypatch
+) -> None:
+    from fin_ai_lab import cli
+
+    async def fake_run_suite(suite_dir, **kwargs):
+        return _eval_summary(target_errors=1), tmp_path
+
+    monkeypatch.setattr(cli, "run_suite", fake_run_suite)
+
+    result = runner.invoke(app, ["eval", "demo"])
+
+    assert result.exit_code == 0, result.output
+    assert "target errors: 1" in result.output

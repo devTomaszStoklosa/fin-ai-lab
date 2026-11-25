@@ -104,6 +104,9 @@ class RunSummary(BaseModel):
     cost_usd: Decimal = Decimal(0)
     case_count: int = 0
     cache_hits: int = 0
+    # Cases whose target raised (runner's `target_error`); any of them
+    # blocks --save-baseline (issue #36, runner.baseline_allowed).
+    target_errors: int = 0
     latency_p50_ms: float = 0.0
     latency_p95_ms: float = 0.0
     metrics: dict[str, dict[str, float]] = {}
