@@ -54,6 +54,8 @@ flowchart LR
 
 `split_chronological` dzieli 70/15/15 od najstarszych do najnowszych, po usunięciu duplikatów (równość po normalizacji białych znaków i wielkości liter). Ta sama normalizacja służy do deduplikacji w etykietowaniu.
 
+Korpus stale rośnie, więc podział testowy przesuwa się na nowsze nagłówki. Dlatego skład zbioru złotego jest przypięty w `golden_test_set.py` / `golden_test_set.json`: wersja i skróty SHA-256 znormalizowanych nagłówków w kolejności przypadków ([issue #9](https://github.com/devTomaszStoklosa/fin-ai-lab/issues/9)). Treść nagłówków nie trafia do repo.
+
 ## Pięć klasyfikatorów
 
 Wszystkie dostają ten sam zbiór treningowy (podział treningowy korpusu) i są oceniane na tym samym zbiorze złotym.
@@ -94,7 +96,7 @@ W czasie raportu S7 korpus miał 92 nagłówki (do 2026-10-21 urósł do 1347, b
 |---|---|
 | `news_classifier_register_task.ps1` | jednorazowo rejestruje zadanie `fin-ai-lab-news-classifier-label` codziennie o 6:30 |
 | `news_classifier_run_labeling.ps1` | uruchamia `news-classifier label --max-calls 300`, log w `data/news_classifier_runs/` |
-| `news_classifier_build_eval_cases.py` | buduje zbiór złoty i zapisuje identyczne `cases.jsonl` w pięciu suitach (pliki poza gitem, to prawdziwe nagłówki prasowe) |
+| `news_classifier_build_eval_cases.py` | buduje zbiór złoty i zapisuje identyczne `cases.jsonl` w pięciu suitach (pliki poza gitem, to prawdziwe nagłówki prasowe). Domyślnie odtwarza bieżącą wersję z listy skrótów w `golden_test_set.json`; `--new-version` wybiera nowy zbiór z części testowej korpusu i zapisuje go jako następną wersję |
 | `news_classifier_quantize_bielik.py` | kwantyzacja, patrz wyżej |
 
 ## Publiczna powierzchnia: `service.py`
@@ -115,7 +117,7 @@ Szczegóły i opcje w [OPERATIONS.md](../OPERATIONS.md). Wymaga extra `ml` (`num
 
 ## Testy
 
-`tests/news_classifier/` (`baselines`, `inference`, `ingest`, `labeling`, `test_comparison_report.py`, `test_metrics.py`, `test_split.py`).
+`tests/news_classifier/` (`baselines`, `inference`, `ingest`, `labeling`, `test_comparison_report.py`, `test_golden_test_set.py`, `test_metrics.py`, `test_split.py`).
 
 ## Znane ograniczenia
 
