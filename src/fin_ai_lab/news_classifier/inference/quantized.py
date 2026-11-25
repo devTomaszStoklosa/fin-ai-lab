@@ -57,7 +57,7 @@ def load_llm(model_path: Path) -> ChatCompletionClient:
     return cast(ChatCompletionClient, llm)
 
 
-def _build_label_grammar() -> object:
+def build_label_grammar() -> object:
     # Issue #160: the model ignored the instruction and echoed/continued
     # the input as free-form prose instead of the expected JSON. Root
     # cause was in training, not here: P4-S5's max_length=512 cut every
@@ -76,6 +76,7 @@ def classify_quantized(
     model_path: Path | None = None,
     *,
     llm: ChatCompletionClient | None = None,
+    grammar: object | None = None,
 ) -> Label:
     """P4-S6 (REQ-021): local CPU inference of the quantized, LoRA
     fine-tuned Bielik (`scripts/news_classifier_quantize_bielik.py`'s
@@ -90,13 +91,20 @@ def classify_quantized(
 
     `llm` is an injected chat-completion client (SOLID D) — `load_llm`
     builds a real one from `model_path` when `llm` isn't given, but a
-    test can pass a stub instead."""
-    grammar = None
+    test can pass a stub instead.
+
+    `grammar` is the JSON-schema grammar from `build_label_grammar()`.
+    Issue #33: whether it's used is the caller's decision, not a side
+    effect of where `llm` came from — the eval target injects its own
+    cached `llm` and must still get the grammar-constrained decoding the
+    docs describe, so it passes the grammar explicitly. The `model_path`
+    path builds one itself when none is given; a test stub passes none."""
     if llm is None:
         if model_path is None:
             raise ValueError("classify_quantized needs either model_path or llm")
         llm = load_llm(model_path)
-        grammar = _build_label_grammar()
+        if grammar is None:
+            grammar = build_label_grammar()
 
     prompts = PromptRegistry()
     prompts.load_dir(PROMPTS_DIR)

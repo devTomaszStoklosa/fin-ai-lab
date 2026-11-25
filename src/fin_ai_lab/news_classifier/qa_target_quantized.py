@@ -22,7 +22,18 @@ def _llm() -> ChatCompletionClient:
     return load_llm(MODEL_PATH)
 
 
+@lru_cache(maxsize=1)
+def _grammar() -> object:
+    from fin_ai_lab.news_classifier.inference.quantized import build_label_grammar
+
+    return build_label_grammar()
+
+
 async def quantized_target(case_input: dict, _ctx: RunContext) -> dict:
+    # Issue #33: the eval measures the classifier as documented, with the
+    # Label JSON grammar, so a malformed answer (prose, a Markdown code
+    # fence around the JSON) can't happen and the score reflects the
+    # labels themselves.
     headline = Headline(**case_input)
-    label = classify_quantized(headline, llm=_llm())
+    label = classify_quantized(headline, llm=_llm(), grammar=_grammar())
     return label.model_dump()

@@ -66,9 +66,8 @@ def test_classify_quantized_requires_model_path_or_llm() -> None:
 
 
 def test_classify_quantized_passes_no_grammar_for_an_injected_stub() -> None:
-    # The real Label-schema grammar (issue #160) is only built on the real
-    # load_llm() path -- an injected test stub never needed a real GGUF
-    # file or the `quantized` extra before, and still doesn't.
+    # An injected test stub never needs a real GGUF file or the
+    # `quantized` extra: without an explicit grammar none is built.
     llm = _StubLlm(
         '{"sentiment": "positive", "event_type": "wyniki finansowe", "tickers": ["PKN"]}'
     )
@@ -78,12 +77,24 @@ def test_classify_quantized_passes_no_grammar_for_an_injected_stub() -> None:
     assert llm.last_grammar is None
 
 
+def test_classify_quantized_forwards_an_explicit_grammar_to_an_injected_llm() -> None:
+    # Issue #33: injecting `llm` must not switch the grammar off.
+    llm = _StubLlm(
+        '{"sentiment": "positive", "event_type": "wyniki finansowe", "tickers": ["PKN"]}'
+    )
+    grammar = object()
+
+    classify_quantized(_headline(), llm=llm, grammar=grammar)
+
+    assert llm.last_grammar is grammar
+
+
 def test_build_label_grammar_constructs_from_the_real_schema() -> None:
     pytest.importorskip("llama_cpp")
-    from fin_ai_lab.news_classifier.inference.quantized import _build_label_grammar
+    from fin_ai_lab.news_classifier.inference.quantized import build_label_grammar
 
     # No GGUF file needed -- grammar construction is a cheap, local
     # translation of Label's own JSON schema, not model inference.
-    grammar = _build_label_grammar()
+    grammar = build_label_grammar()
 
     assert grammar is not None
