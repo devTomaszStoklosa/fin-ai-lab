@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from pydantic import ValidationError
 
@@ -42,12 +42,19 @@ def load_llm(model_path: Path) -> ChatCompletionClient:
     # 512 was too small once #142's vocab-conversion fix made tokenization
     # correct again — the real (correctly tokenized) prompt, including the
     # ticker catalog, runs 640-670 tokens; 2048 leaves headroom to grow.
-    return Llama(
+    llm = Llama(
         model_path=str(model_path),
         n_ctx=2048,
         verbose=False,
         kv_overrides=TOKENIZER_KV_OVERRIDES,
     )
+    # Issue #34: Llama.create_chat_completion is wider than this Protocol —
+    # typed message dicts, LlamaGrammar, and a stream iterator in its return
+    # type — and the Protocol can't name llama_cpp's types without making
+    # this module need the extra just to import. classify_quantized never
+    # streams, so the call returns a plain response dict, which is all the
+    # Protocol promises; the cast states that at this one boundary.
+    return cast(ChatCompletionClient, llm)
 
 
 def _build_label_grammar() -> object:

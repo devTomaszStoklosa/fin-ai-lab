@@ -6,6 +6,8 @@ import torch  # pyright: ignore[reportMissingImports]  # extra "herbert"
 from transformers import (  # pyright: ignore[reportMissingImports]
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
 )
 
 from fin_ai_lab.core.evals.models import RunContext
@@ -27,20 +29,27 @@ EVENT_TYPES = list(get_args(EventType))
 CHECKPOINT_DIR = Path("data/private/herbert_checkpoints")
 
 
+# Issue #34: the Auto* classes are factories, never the type of what they
+# return — a tokenizer instance is a PreTrainedTokenizerBase, a model
+# instance a PreTrainedModel. Annotating with the factory class made
+# pyright reject every call on the result once the extra was installed.
 @lru_cache(maxsize=1)
-def _tokenizer() -> AutoTokenizer:
-    return AutoTokenizer.from_pretrained(MODEL_ID)
+def _tokenizer() -> PreTrainedTokenizerBase:
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    if tokenizer is None:
+        raise RuntimeError(f"transformers found no tokenizer for {MODEL_ID}")
+    return tokenizer
 
 
 @lru_cache(maxsize=1)
-def _sentiment_model() -> AutoModelForSequenceClassification:
+def _sentiment_model() -> PreTrainedModel:
     model = AutoModelForSequenceClassification.from_pretrained(CHECKPOINT_DIR / "sentiment")
     model.eval()
     return model
 
 
 @lru_cache(maxsize=1)
-def _event_type_model() -> AutoModelForSequenceClassification:
+def _event_type_model() -> PreTrainedModel:
     model = AutoModelForSequenceClassification.from_pretrained(CHECKPOINT_DIR / "event_type")
     model.eval()
     return model
