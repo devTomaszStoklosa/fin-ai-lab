@@ -8,17 +8,18 @@ from fin_ai_lab.news_classifier.baselines.tfidf_logreg import (
     classify_tfidf_logreg,
 )
 from fin_ai_lab.news_classifier.corpus_store import load_labeled
+from fin_ai_lab.news_classifier.golden_test_set import split_excluding_golden_test_set
 from fin_ai_lab.news_classifier.models import Headline, LabeledHeadline
-from fin_ai_lab.news_classifier.split import split_chronological
 
 
 # P4-S7 (REQ-020/022): every non-fine-tuned model is compared against the
-# same training data — the corpus's chronological train split, the same
-# one herbert_finetune.ipynb trains on — so nothing here has ever seen a
-# headline from the test split cases.jsonl is built from.
+# same training data — the chronological train split, the same one
+# herbert_finetune.ipynb trains on — taken after removing the golden test
+# set's headlines (issue #44), so nothing here has ever seen a headline
+# cases.jsonl is built from, however much the corpus has grown since.
 @lru_cache(maxsize=1)
 def _train_split() -> list[LabeledHeadline]:
-    train, _dev, _test = split_chronological(load_labeled())
+    train, _dev, _test = split_excluding_golden_test_set(load_labeled())
     return train
 
 

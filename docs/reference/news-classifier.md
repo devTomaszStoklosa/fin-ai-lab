@@ -56,9 +56,11 @@ flowchart LR
 
 Korpus stale rośnie, więc podział testowy przesuwa się na nowsze nagłówki. Dlatego skład zbioru złotego jest przypięty w `golden_test_set.py` / `golden_test_set.json`: wersja i skróty SHA-256 znormalizowanych nagłówków w kolejności przypadków ([issue #9](https://github.com/devTomaszStoklosa/fin-ai-lab/issues/9)). Treść nagłówków nie trafia do repo.
 
+Z tego samego powodu dawne nagłówki testowe z czasem przechodzą do podziału treningowego. Dlatego modele dostają podział z `split_excluding_golden_test_set`: najpierw usuwa z korpusu nagłówki zbioru złotego, potem dzieli resztę 70/15/15 ([issue #44](https://github.com/devTomaszStoklosa/fin-ai-lab/issues/44)). Korzystają z niego `qa_target.py` i oba notebooki treningowe.
+
 ## Pięć klasyfikatorów
 
-Wszystkie dostają ten sam zbiór treningowy (podział treningowy korpusu) i są oceniane na tym samym zbiorze złotym.
+Wszystkie dostają ten sam zbiór treningowy (podział treningowy korpusu bez nagłówków zbioru złotego) i są oceniane na tym samym zbiorze złotym.
 
 | Klasyfikator | Plik | Opis | Suita |
 |---|---|---|---|
