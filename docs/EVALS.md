@@ -38,7 +38,7 @@ Jeśli przypadki zawierają dane, których nie wolno publikować (licencja „ty
 | Suita | W repo | Budowa `cases.jsonl` |
 |---|---|---|
 | `p3-regime-backtest` | `scenarios.jsonl` (data, serie, oczekiwany reżim, bez wartości) | `uv run python scripts/market_pulse_build_regime_cases.py` — wartości z FRED, wymaga `FRED_API_KEY` |
-| `p4-classifier-*` | nic poza `suite.yaml` | wersja 1 (bieżąca) z historii gita: `git show b861667:evals/p4-classifier-majority/cases.jsonl` (ta sama treść we wszystkich pięciu suitach); nowa wersja: `uv run python scripts/news_classifier_build_eval_cases.py` z lokalnego korpusu (`data/corpus/`, `data/review/`) — to podbicie `dataset_version` i nowy baseline |
+| `p4-classifier-*` | `suite.yaml` i lista nagłówków bieżącej wersji jako skróty SHA-256 (`src/fin_ai_lab/news_classifier/golden_test_set.json`) | bieżąca wersja: `uv run python scripts/news_classifier_build_eval_cases.py` z lokalnego pliku przeglądu (`data/review/`), ta sama treść we wszystkich pięciu suitach; wersja 1 jest też w historii gita: `git show b861667:evals/p4-classifier-majority/cases.jsonl`. Nowa wersja: ten sam skrypt z `--new-version` (część testowa dzisiejszego korpusu `data/corpus/` przecięta z przeglądem), potem podbicie `dataset_version` w pięciu `suite.yaml` i nowy baseline ([issue #9](https://github.com/devTomaszStoklosa/fin-ai-lab/issues/9)) |
 
 Odtworzony plik ma tę samą treść co wcześniej, więc baseline pozostaje ważny bez podbijania `dataset_version`.
 
