@@ -11,6 +11,7 @@ from fin_ai_lab.news_classifier.golden_test_set import (
     pin_golden_test_set,
     save_golden_test_set,
     select_golden_test_items,
+    split_excluding_golden_test_set,
 )
 from fin_ai_lab.news_classifier.models import Headline, Label, LabeledHeadline
 
@@ -72,3 +73,27 @@ def test_committed_set_matches_the_p4_suites_dataset_version() -> None:
         suite = yaml.safe_load((suite_dir / "suite.yaml").read_text(encoding="utf-8"))
         assert suite["dataset_version"] == pinned.dataset_version, suite_dir.name
     assert len(pinned.headline_sha256) == len(set(pinned.headline_sha256))
+
+
+def test_split_excluding_golden_test_set_keeps_test_headlines_out_of_every_split() -> None:
+    # Issue #44: the golden headlines are the oldest here, as in the real,
+    # grown corpus; a plain chronological split would put them in train.
+    golden = [_item(f"Złoty {i}") for i in range(3)]
+    newer = [
+        LabeledHeadline(
+            headline=Headline(
+                headline=f"Nowszy {i}",
+                source="test",
+                published_at=datetime(2026, 2, 1 + i, tzinfo=UTC),
+            ),
+            label=Label(sentiment="neutral", event_type="inne", tickers=[]),
+            source_model="teacher",
+        )
+        for i in range(20)
+    ]
+    pinned = pin_golden_test_set(golden, dataset_version=1)
+
+    train, dev, test = split_excluding_golden_test_set(golden + newer, pinned)
+
+    kept = {item.headline.headline for item in train + dev + test}
+    assert kept == {item.headline.headline for item in newer}
